@@ -11,6 +11,6 @@ import "io"
 type File struct{}
 
 // Parse the Avro IDL defined in the given reader.
-func Parse(r io.Reader) (File, error) {
-	return File{}, nil
+func Parse(r io.Reader) (*File, error) {
+	return &File{}, nil
 }
