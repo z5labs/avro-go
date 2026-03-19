@@ -27,6 +27,27 @@ type Token struct {
 // TokenType represents the type of a token.
 type TokenType int
 
+const (
+	TokenComment      TokenType = iota // e.g. // comment or /* comment */
+	TokenIdentifier                    // e.g. schema, enum, record, namespace, etc.
+	TokenSemicolon                     // ;
+	TokenAt                            // @
+	TokenString                        // e.g. "string"
+	TokenNumber                        // e.g. 123, 45.67
+	TokenLeftBrace                     // {
+	TokenRightBrace                    // }
+	TokenLeftParen                     // (
+	TokenRightParen                    // )
+	TokenLeftBracket                   // [
+	TokenRightBracket                  // ]
+	TokenLessThan                      // <
+	TokenGreaterThan                   // >
+	TokenComma                         // ,
+	TokenEqual                         // =
+	TokenQuestion                      // ?
+	TokenBacktick                      // `
+)
+
 // ErrEndOfTokens is the error returned by the tokenizer when it reaches the end of the input.
 var ErrEndOfTokens = errors.New("idl: end of tokens")
 
