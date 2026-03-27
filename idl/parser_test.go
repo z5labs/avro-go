@@ -119,6 +119,42 @@ enum Suit { HEARTS } = ;`,
 			src:         `namespace com.example;`,
 			expectedErr: UnexpectedEndOfTokensError{Expected: []TokenType{TokenIdentifier, TokenComment}},
 		},
+		{
+			name: "fixed missing name",
+			src: `schema int;
+fixed (16);`,
+			expectedErr: UnexpectedTokenError{
+				Expected: []TokenType{TokenIdentifier},
+				Actual:   Token{Pos: Pos{Line: 2, Column: 7}, Type: TokenSymbol, Value: []byte("(")},
+			},
+		},
+		{
+			name: "fixed missing open paren",
+			src: `schema int;
+fixed MD5 16);`,
+			expectedErr: UnexpectedTokenError{
+				Expected: []TokenType{TokenSymbol},
+				Actual:   Token{Pos: Pos{Line: 2, Column: 11}, Type: TokenNumber, Value: []byte("16")},
+			},
+		},
+		{
+			name: "fixed missing size",
+			src: `schema int;
+fixed MD5();`,
+			expectedErr: UnexpectedTokenError{
+				Expected: []TokenType{TokenNumber},
+				Actual:   Token{Pos: Pos{Line: 2, Column: 11}, Type: TokenSymbol, Value: []byte(")")},
+			},
+		},
+		{
+			name: "fixed missing close paren",
+			src: `schema int;
+fixed MD5(16;`,
+			expectedErr: UnexpectedTokenError{
+				Expected: []TokenType{TokenSymbol},
+				Actual:   Token{Pos: Pos{Line: 2, Column: 13}, Type: TokenSymbol, Value: []byte(";")},
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -330,6 +366,69 @@ enum Color { RED, BLACK };`,
 								{Pos: Pos{Line: 3, Column: 14}, Value: "RED"},
 								{Pos: Pos{Line: 3, Column: 19}, Value: "BLACK"},
 							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "schema with single fixed type",
+			src: `schema int;
+fixed MD5(16);`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Fixed{
+							Name: "MD5",
+							Size: 16,
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "schema with multiple fixed types",
+			src: `schema int;
+fixed MD5(16);
+fixed SHA256(32);`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Fixed{
+							Name: "MD5",
+							Size: 16,
+						},
+						&Fixed{
+							Name: "SHA256",
+							Size: 32,
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "schema with enum and fixed types",
+			src: `schema int;
+enum Suit { HEARTS };
+fixed MD5(16);`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Enum{
+							Name: "Suit",
+							Values: []*Ident{
+								{Pos: Pos{Line: 2, Column: 13}, Value: "HEARTS"},
+							},
+						},
+						&Fixed{
+							Name: "MD5",
+							Size: 16,
 						},
 					},
 				},
