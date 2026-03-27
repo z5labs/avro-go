@@ -176,6 +176,30 @@ fixed MD5(16);`,
 				{Pos: Pos{Line: 1, Column: 16}, Type: TokenSymbol, Value: []byte(";")},
 			},
 		},
+		{
+			name: "schema with union type",
+			src:  `schema union { null, string };`,
+			expected: []Token{
+				{Pos: Pos{Line: 1, Column: 1}, Type: TokenIdentifier, Value: []byte("schema")},
+				{Pos: Pos{Line: 1, Column: 8}, Type: TokenIdentifier, Value: []byte("union")},
+				{Pos: Pos{Line: 1, Column: 14}, Type: TokenSymbol, Value: []byte("{")},
+				{Pos: Pos{Line: 1, Column: 16}, Type: TokenIdentifier, Value: []byte("null")},
+				{Pos: Pos{Line: 1, Column: 20}, Type: TokenSymbol, Value: []byte(",")},
+				{Pos: Pos{Line: 1, Column: 22}, Type: TokenIdentifier, Value: []byte("string")},
+				{Pos: Pos{Line: 1, Column: 29}, Type: TokenSymbol, Value: []byte("}")},
+				{Pos: Pos{Line: 1, Column: 30}, Type: TokenSymbol, Value: []byte(";")},
+			},
+		},
+		{
+			name: "schema with nullable shorthand",
+			src:  `schema string?;`,
+			expected: []Token{
+				{Pos: Pos{Line: 1, Column: 1}, Type: TokenIdentifier, Value: []byte("schema")},
+				{Pos: Pos{Line: 1, Column: 8}, Type: TokenIdentifier, Value: []byte("string")},
+				{Pos: Pos{Line: 1, Column: 14}, Type: TokenSymbol, Value: []byte("?")},
+				{Pos: Pos{Line: 1, Column: 15}, Type: TokenSymbol, Value: []byte(";")},
+			},
+		},
 	}
 
 	for _, tc := range testCases {
