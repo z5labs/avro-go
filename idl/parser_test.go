@@ -71,6 +71,22 @@ schema int;`,
 			},
 		},
 		{
+			name: "primitive schema with namespace and comment between",
+			src: `namespace com.example;
+// comment
+schema int;`,
+			expected: &File{
+				Comments: []*Comment{
+					{Pos: Pos{Line: 2, Column: 1}, Text: "// comment"},
+				},
+				Schema: &Schema{
+					Pos:       Pos{Line: 3, Column: 1},
+					Namespace: "com.example",
+					Type:      Ident{Pos: Pos{Line: 3, Column: 8}, Value: "int"},
+				},
+			},
+		},
+		{
 			name: "primitive schema with multi multi line comment",
 			src: `/*
 * This is a comment

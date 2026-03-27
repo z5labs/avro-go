@@ -211,16 +211,22 @@ func parseFile(p *parser, file *File) (parserAction[*File], error) {
 	case TokenIdentifier:
 		switch string(tok.Value) {
 		case "schema":
-			if file.Schema == nil {
-				file.Schema = &Schema{}
-			}
-			file.Schema.Pos = tok.Pos
-			return parseSchema, nil
+			file.Schema = &Schema{Pos: tok.Pos}
+
+			return parseIdent(func(t Token) (parserAction[*File], error) {
+				file.Schema.Type = Ident{
+					Pos:   t.Pos,
+					Value: string(t.Value),
+				}
+				return parseSemicolon(parseSchemaTypes), nil
+			}), nil
 		case "namespace":
-			if file.Schema == nil {
-				file.Schema = &Schema{}
-			}
-			return parseNamespace, nil
+			file.Schema = &Schema{}
+
+			return parseIdent(func(t Token) (parserAction[*File], error) {
+				file.Schema.Namespace = string(t.Value)
+				return parseSemicolon(parseSchema), nil
+			}), nil
 		default:
 			return nil, errors.New("schema idl must start with either 'schema' or 'namespace'")
 		}
@@ -239,36 +245,58 @@ func parseFile(p *parser, file *File) (parserAction[*File], error) {
 	}
 }
 
-func parseNamespace(p *parser, file *File) (parserAction[*File], error) {
-	tok, err := p.expect(TokenIdentifier)
+func parseSchema(p *parser, file *File) (parserAction[*File], error) {
+	tok, err := p.expect(TokenIdentifier, TokenComment)
 	if err != nil {
 		return nil, err
 	}
-	file.Schema.Namespace = string(tok.Value)
 
-	return parseSemicolon(parseFile), nil
+	switch tok.Type {
+	case TokenIdentifier:
+		switch string(tok.Value) {
+		case "schema":
+			file.Schema.Pos = tok.Pos
+			return parseIdent(func(t Token) (parserAction[*File], error) {
+				file.Schema.Type = Ident{
+					Pos:   t.Pos,
+					Value: string(t.Value),
+				}
+				return parseSemicolon(parseSchemaTypes), nil
+			}), nil
+		default:
+			return nil, errors.New("schema definition must follow namespace declaration")
+		}
+	case TokenComment:
+		file.Comments = append(file.Comments, &Comment{
+			Pos:  tok.Pos,
+			Text: string(tok.Value),
+		})
+		return parseSchema, nil
+	default:
+		return nil, UnexpectedTokenError{
+			Expected: []TokenType{TokenIdentifier, TokenComment},
+			Actual:   tok,
+		}
+	}
 }
 
-func parseSchema(p *parser, file *File) (_ parserAction[*File], err error) {
-	for action := parseSchemaType; action != nil && err == nil; {
+func parseSchemaTypes(p *parser, file *File) (_ parserAction[*File], err error) {
+	for action := parseType; action != nil && err == nil; {
 		action, err = action(p, file.Schema)
 	}
 
 	return nil, err
 }
 
-func parseSchemaType(p *parser, schema *Schema) (parserAction[*Schema], error) {
-	tok, err := p.expect(TokenIdentifier)
-	if err != nil {
-		return nil, err
-	}
+func parseIdent[T any](f func(Token) (parserAction[T], error)) parserAction[T] {
+	return func(p *parser, t T) (parserAction[T], error) {
+		tok, err := p.expect(TokenIdentifier)
+		if err != nil {
+			return nil, err
+		}
 
-	schema.Type = Ident{
-		Pos:   tok.Pos,
-		Value: string(tok.Value),
+		return f(tok)
 	}
-
-	return parseSemicolon(parseTypes), nil
 }
 
 func parseSemicolon[T any](next parserAction[T]) parserAction[T] {
@@ -288,17 +316,6 @@ func parseSemicolon[T any](next parserAction[T]) parserAction[T] {
 	}
 }
 
-func parseTypes(p *parser, schema *Schema) (parserAction[*Schema], error) {
-	_, err := p.expect(TokenIdentifier, TokenSymbol)
-	if err != nil {
-		var ueot UnexpectedEndOfTokensError
-		if errors.As(err, &ueot) {
-			// a schema can have zero types, so if we reach the end of tokens here, we can just return successfully.
-			return nil, nil
-		}
-
-		return nil, err
-	}
-
+func parseType(p *parser, schema *Schema) (parserAction[*Schema], error) {
 	return nil, nil
 }
