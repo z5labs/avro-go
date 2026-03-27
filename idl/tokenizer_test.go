@@ -200,6 +200,51 @@ fixed MD5(16);`,
 				{Pos: Pos{Line: 1, Column: 15}, Type: TokenSymbol, Value: []byte(";")},
 			},
 		},
+		{
+			name: "schema with record type with single field",
+			src: `schema int;
+record Employee {
+  string name;
+};`,
+			expected: []Token{
+				{Pos: Pos{Line: 1, Column: 1}, Type: TokenIdentifier, Value: []byte("schema")},
+				{Pos: Pos{Line: 1, Column: 8}, Type: TokenIdentifier, Value: []byte("int")},
+				{Pos: Pos{Line: 1, Column: 11}, Type: TokenSymbol, Value: []byte(";")},
+				{Pos: Pos{Line: 2, Column: 1}, Type: TokenIdentifier, Value: []byte("record")},
+				{Pos: Pos{Line: 2, Column: 8}, Type: TokenIdentifier, Value: []byte("Employee")},
+				{Pos: Pos{Line: 2, Column: 17}, Type: TokenSymbol, Value: []byte("{")},
+				{Pos: Pos{Line: 3, Column: 3}, Type: TokenIdentifier, Value: []byte("string")},
+				{Pos: Pos{Line: 3, Column: 10}, Type: TokenIdentifier, Value: []byte("name")},
+				{Pos: Pos{Line: 3, Column: 14}, Type: TokenSymbol, Value: []byte(";")},
+				{Pos: Pos{Line: 4, Column: 1}, Type: TokenSymbol, Value: []byte("}")},
+				{Pos: Pos{Line: 4, Column: 2}, Type: TokenSymbol, Value: []byte(";")},
+			},
+		},
+		{
+			name: "schema with record type with nullable field",
+			src: `schema int;
+record Employee {
+  string name;
+  int? age;
+};`,
+			expected: []Token{
+				{Pos: Pos{Line: 1, Column: 1}, Type: TokenIdentifier, Value: []byte("schema")},
+				{Pos: Pos{Line: 1, Column: 8}, Type: TokenIdentifier, Value: []byte("int")},
+				{Pos: Pos{Line: 1, Column: 11}, Type: TokenSymbol, Value: []byte(";")},
+				{Pos: Pos{Line: 2, Column: 1}, Type: TokenIdentifier, Value: []byte("record")},
+				{Pos: Pos{Line: 2, Column: 8}, Type: TokenIdentifier, Value: []byte("Employee")},
+				{Pos: Pos{Line: 2, Column: 17}, Type: TokenSymbol, Value: []byte("{")},
+				{Pos: Pos{Line: 3, Column: 3}, Type: TokenIdentifier, Value: []byte("string")},
+				{Pos: Pos{Line: 3, Column: 10}, Type: TokenIdentifier, Value: []byte("name")},
+				{Pos: Pos{Line: 3, Column: 14}, Type: TokenSymbol, Value: []byte(";")},
+				{Pos: Pos{Line: 4, Column: 3}, Type: TokenIdentifier, Value: []byte("int")},
+				{Pos: Pos{Line: 4, Column: 6}, Type: TokenSymbol, Value: []byte("?")},
+				{Pos: Pos{Line: 4, Column: 8}, Type: TokenIdentifier, Value: []byte("age")},
+				{Pos: Pos{Line: 4, Column: 11}, Type: TokenSymbol, Value: []byte(";")},
+				{Pos: Pos{Line: 5, Column: 1}, Type: TokenSymbol, Value: []byte("}")},
+				{Pos: Pos{Line: 5, Column: 2}, Type: TokenSymbol, Value: []byte(";")},
+			},
+		},
 	}
 
 	for _, tc := range testCases {
