@@ -11,6 +11,7 @@ import (
 	"io"
 	"iter"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -335,6 +336,13 @@ func parseType(p *parser, schema *Schema) (_ parserAction[*Schema], err error) {
 			}
 			schema.Types = append(schema.Types, enum)
 			return parseType, nil
+		case "fixed":
+			fixed, err := parseFixed(p)
+			if err != nil {
+				return nil, err
+			}
+			schema.Types = append(schema.Types, fixed)
+			return parseType, nil
 		default:
 			return nil, errors.New("unknown type keyword: " + string(tok.Value))
 		}
@@ -464,4 +472,63 @@ func parseEnumDefault(p *parser, enum *Enum) (parserAction[*Enum], error) {
 		Value: string(tok.Value),
 	}
 	return parseSemicolon[*Enum](nil), nil
+}
+
+func parseFixed(p *parser) (fixed *Fixed, err error) {
+	fixed = &Fixed{}
+	for action := parseFixedName(fixed); action != nil && err == nil; {
+		action, err = action(p, fixed)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return fixed, nil
+}
+
+func parseFixedName(fixed *Fixed) parserAction[*Fixed] {
+	return parseIdent(func(tok Token) (parserAction[*Fixed], error) {
+		fixed.Name = string(tok.Value)
+		return parseFixedOpenParen, nil
+	})
+}
+
+func parseFixedOpenParen(p *parser, fixed *Fixed) (parserAction[*Fixed], error) {
+	tok, err := p.expect(TokenSymbol)
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Equal(tok.Value, []byte("(")) {
+		return nil, UnexpectedTokenError{
+			Expected: []TokenType{TokenSymbol},
+			Actual:   tok,
+		}
+	}
+	return parseFixedSize, nil
+}
+
+func parseFixedSize(p *parser, fixed *Fixed) (parserAction[*Fixed], error) {
+	tok, err := p.expect(TokenNumber)
+	if err != nil {
+		return nil, err
+	}
+	size, err := strconv.Atoi(string(tok.Value))
+	if err != nil {
+		return nil, err
+	}
+	fixed.Size = size
+	return parseFixedCloseParen, nil
+}
+
+func parseFixedCloseParen(p *parser, fixed *Fixed) (parserAction[*Fixed], error) {
+	tok, err := p.expect(TokenSymbol)
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Equal(tok.Value, []byte(")")) {
+		return nil, UnexpectedTokenError{
+			Expected: []TokenType{TokenSymbol},
+			Actual:   tok,
+		}
+	}
+	return parseSemicolon[*Fixed](nil), nil
 }
