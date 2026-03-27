@@ -155,6 +155,30 @@ fixed MD5(16;`,
 				Actual:   Token{Pos: Pos{Line: 2, Column: 13}, Type: TokenSymbol, Value: []byte(";")},
 			},
 		},
+		{
+			name: "map schema missing open angle bracket",
+			src:  `schema map int>;`,
+			expectedErr: UnexpectedTokenError{
+				Expected: []TokenType{TokenSymbol},
+				Actual:   Token{Pos: Pos{Line: 1, Column: 12}, Type: TokenIdentifier, Value: []byte("int")},
+			},
+		},
+		{
+			name: "map schema missing value type",
+			src:  `schema map<>;`,
+			expectedErr: UnexpectedTokenError{
+				Expected: []TokenType{TokenIdentifier},
+				Actual:   Token{Pos: Pos{Line: 1, Column: 12}, Type: TokenSymbol, Value: []byte(">")},
+			},
+		},
+		{
+			name: "map schema missing close angle bracket",
+			src:  `schema map<int;`,
+			expectedErr: UnexpectedTokenError{
+				Expected: []TokenType{TokenSymbol},
+				Actual:   Token{Pos: Pos{Line: 1, Column: 15}, Type: TokenSymbol, Value: []byte(";")},
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -429,6 +453,54 @@ fixed MD5(16);`,
 						&Fixed{
 							Name: "MD5",
 							Size: 16,
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "map schema with default namespace",
+			src:  `schema map<int>;`,
+			expected: &File{
+				Schema: &Schema{
+					Pos: Pos{Line: 1, Column: 1},
+					Type: &Map{
+						Values: &Ident{Pos: Pos{Line: 1, Column: 12}, Value: "int"},
+					},
+				},
+			},
+		},
+		{
+			name: "map schema with custom namespace",
+			src: `namespace com.example;
+schema map<string>;`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:       Pos{Line: 2, Column: 1},
+					Namespace: "com.example",
+					Type: &Map{
+						Values: &Ident{Pos: Pos{Line: 2, Column: 12}, Value: "string"},
+					},
+				},
+			},
+		},
+		{
+			name: "map schema with enum type",
+			src: `schema map<Suit>;
+enum Suit { HEARTS, DIAMONDS };`,
+			expected: &File{
+				Schema: &Schema{
+					Pos: Pos{Line: 1, Column: 1},
+					Type: &Map{
+						Values: &Ident{Pos: Pos{Line: 1, Column: 12}, Value: "Suit"},
+					},
+					Types: []Type{
+						&Enum{
+							Name: "Suit",
+							Values: []*Ident{
+								{Pos: Pos{Line: 2, Column: 13}, Value: "HEARTS"},
+								{Pos: Pos{Line: 2, Column: 21}, Value: "DIAMONDS"},
+							},
 						},
 					},
 				},

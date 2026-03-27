@@ -22,6 +22,8 @@ type Ident struct {
 	Value string
 }
 
+func (Ident) idl() {}
+
 // SortOrder represents the sort order of a field in a record,
 // which can be ascending, descending, or ignored.
 type SortOrder int
@@ -107,7 +109,7 @@ func (Fixed) idl() {}
 type Schema struct {
 	Pos       Pos
 	Namespace string
-	Type      Ident
+	Type      Type
 	Types     []Type
 }
 
@@ -214,11 +216,8 @@ func parseFile(p *parser, file *File) (parserAction[*File], error) {
 		case "schema":
 			file.Schema = &Schema{Pos: tok.Pos}
 
-			return parseIdent(func(t Token) (parserAction[*File], error) {
-				file.Schema.Type = Ident{
-					Pos:   t.Pos,
-					Value: string(t.Value),
-				}
+			return parseSchemaType(func(typ Type) (parserAction[*File], error) {
+				file.Schema.Type = typ
 				return parseSemicolon(parseSchemaTypes), nil
 			}), nil
 		case "namespace":
@@ -257,11 +256,8 @@ func parseSchema(p *parser, file *File) (parserAction[*File], error) {
 		switch string(tok.Value) {
 		case "schema":
 			file.Schema.Pos = tok.Pos
-			return parseIdent(func(t Token) (parserAction[*File], error) {
-				file.Schema.Type = Ident{
-					Pos:   t.Pos,
-					Value: string(t.Value),
-				}
+			return parseSchemaType(func(typ Type) (parserAction[*File], error) {
+				file.Schema.Type = typ
 				return parseSemicolon(parseSchemaTypes), nil
 			}), nil
 		default:
@@ -315,6 +311,58 @@ func parseSemicolon[T any](next parserAction[T]) parserAction[T] {
 
 		return next, nil
 	}
+}
+
+func parseSchemaType[T any](f func(Type) (parserAction[T], error)) parserAction[T] {
+	return func(p *parser, t T) (parserAction[T], error) {
+		tok, err := p.expect(TokenIdentifier)
+		if err != nil {
+			return nil, err
+		}
+
+		if string(tok.Value) == "map" {
+			m, err := parseMapType(p)
+			if err != nil {
+				return nil, err
+			}
+			return f(m)
+		}
+
+		return f(Ident{Pos: tok.Pos, Value: string(tok.Value)})
+	}
+}
+
+func parseMapType(p *parser) (*Map, error) {
+	tok, err := p.expect(TokenSymbol)
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Equal(tok.Value, []byte("<")) {
+		return nil, UnexpectedTokenError{
+			Expected: []TokenType{TokenSymbol},
+			Actual:   tok,
+		}
+	}
+
+	valTok, err := p.expect(TokenIdentifier)
+	if err != nil {
+		return nil, err
+	}
+
+	tok, err = p.expect(TokenSymbol)
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Equal(tok.Value, []byte(">")) {
+		return nil, UnexpectedTokenError{
+			Expected: []TokenType{TokenSymbol},
+			Actual:   tok,
+		}
+	}
+
+	return &Map{
+		Values: &Ident{Pos: valTok.Pos, Value: string(valTok.Value)},
+	}, nil
 }
 
 func parseType(p *parser, schema *Schema) (_ parserAction[*Schema], err error) {

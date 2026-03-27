@@ -164,6 +164,18 @@ fixed MD5(16);`,
 				{Pos: Pos{Line: 2, Column: 14}, Type: TokenSymbol, Value: []byte(";")},
 			},
 		},
+		{
+			name: "schema with map type",
+			src:  `schema map<int>;`,
+			expected: []Token{
+				{Pos: Pos{Line: 1, Column: 1}, Type: TokenIdentifier, Value: []byte("schema")},
+				{Pos: Pos{Line: 1, Column: 8}, Type: TokenIdentifier, Value: []byte("map")},
+				{Pos: Pos{Line: 1, Column: 11}, Type: TokenSymbol, Value: []byte("<")},
+				{Pos: Pos{Line: 1, Column: 12}, Type: TokenIdentifier, Value: []byte("int")},
+				{Pos: Pos{Line: 1, Column: 15}, Type: TokenSymbol, Value: []byte(">")},
+				{Pos: Pos{Line: 1, Column: 16}, Type: TokenSymbol, Value: []byte(";")},
+			},
+		},
 	}
 
 	for _, tc := range testCases {
