@@ -238,8 +238,7 @@ func tokenizeIDL(t *tokenizer, yield func(Token, error) bool) tokenizerAction {
 						err = t.backup(pos)
 						return yieldErrorOr(
 							err,
-							// TODO: tokenize number
-							nil,
+							tokenizeNumber,
 						)
 					default:
 						return yieldErrorOr(UnexpectedCharacterError{Pos: t.pos, R: r}, nil)
@@ -327,6 +326,23 @@ func tokenizeIdentifier(t *tokenizer, yield func(Token, error) bool) tokenizerAc
 		err,
 		yieldTokenThen(
 			Token{Pos: pos, Type: TokenIdentifier, Value: ident.Bytes()},
+			skipWhitespace(tokenizeIDL),
+		),
+	)
+}
+
+func tokenizeNumber(t *tokenizer, yield func(Token, error) bool) tokenizerAction {
+	pos := t.pos
+
+	var num bytes.Buffer
+	err := t.copyIf(&num, func(r rune) bool {
+		return unicode.IsDigit(r)
+	})
+
+	return yieldErrorOr(
+		err,
+		yieldTokenThen(
+			Token{Pos: pos, Type: TokenNumber, Value: num.Bytes()},
 			skipWhitespace(tokenizeIDL),
 		),
 	)
