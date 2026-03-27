@@ -316,6 +316,152 @@ func parseSemicolon[T any](next parserAction[T]) parserAction[T] {
 	}
 }
 
-func parseType(p *parser, schema *Schema) (parserAction[*Schema], error) {
-	return nil, nil
+func parseType(p *parser, schema *Schema) (_ parserAction[*Schema], err error) {
+	tok, err, ok := p.next()
+	if !ok {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	switch tok.Type {
+	case TokenIdentifier:
+		switch string(tok.Value) {
+		case "enum":
+			enum, err := parseEnum(p)
+			if err != nil {
+				return nil, err
+			}
+			schema.Types = append(schema.Types, enum)
+			return parseType, nil
+		default:
+			return nil, errors.New("unknown type keyword: " + string(tok.Value))
+		}
+	default:
+		return nil, UnexpectedTokenError{
+			Expected: []TokenType{TokenIdentifier},
+			Actual:   tok,
+		}
+	}
+}
+
+func parseEnum(p *parser) (enum *Enum, err error) {
+	enum = &Enum{}
+	for action := parseEnumName(enum); action != nil && err == nil; {
+		action, err = action(p, enum)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return enum, nil
+}
+
+func parseEnumName(enum *Enum) parserAction[*Enum] {
+	return parseIdent(func(tok Token) (parserAction[*Enum], error) {
+		enum.Name = string(tok.Value)
+		return parseEnumOpenBrace, nil
+	})
+}
+
+func parseEnumOpenBrace(p *parser, enum *Enum) (parserAction[*Enum], error) {
+	tok, err := p.expect(TokenSymbol)
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Equal(tok.Value, []byte("{")) {
+		return nil, UnexpectedTokenError{
+			Expected: []TokenType{TokenSymbol},
+			Actual:   tok,
+		}
+	}
+	return parseEnumValue, nil
+}
+
+func parseEnumValue(p *parser, enum *Enum) (parserAction[*Enum], error) {
+	tok, err := p.expect(TokenIdentifier)
+	if err != nil {
+		return nil, err
+	}
+	enum.Values = append(enum.Values, &Ident{
+		Pos:   tok.Pos,
+		Value: string(tok.Value),
+	})
+	return parseEnumValueSep, nil
+}
+
+func parseEnumValueSep(p *parser, enum *Enum) (parserAction[*Enum], error) {
+	tok, err := p.expect(TokenSymbol)
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case bytes.Equal(tok.Value, []byte(",")):
+		return parseEnumValueOrClose, nil
+	case bytes.Equal(tok.Value, []byte("}")):
+		return parseEnumDefaultOrSemicolon, nil
+	default:
+		return nil, UnexpectedTokenError{
+			Expected: []TokenType{TokenSymbol},
+			Actual:   tok,
+		}
+	}
+}
+
+func parseEnumValueOrClose(p *parser, enum *Enum) (parserAction[*Enum], error) {
+	tok, err := p.expect(TokenIdentifier, TokenSymbol)
+	if err != nil {
+		return nil, err
+	}
+	switch tok.Type {
+	case TokenIdentifier:
+		enum.Values = append(enum.Values, &Ident{
+			Pos:   tok.Pos,
+			Value: string(tok.Value),
+		})
+		return parseEnumValueSep, nil
+	case TokenSymbol:
+		if !bytes.Equal(tok.Value, []byte("}")) {
+			return nil, UnexpectedTokenError{
+				Expected: []TokenType{TokenSymbol},
+				Actual:   tok,
+			}
+		}
+		return parseEnumDefaultOrSemicolon, nil
+	default:
+		return nil, UnexpectedTokenError{
+			Expected: []TokenType{TokenIdentifier, TokenSymbol},
+			Actual:   tok,
+		}
+	}
+}
+
+func parseEnumDefaultOrSemicolon(p *parser, enum *Enum) (parserAction[*Enum], error) {
+	tok, err := p.expect(TokenSymbol)
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case bytes.Equal(tok.Value, []byte("=")):
+		return parseEnumDefault, nil
+	case bytes.Equal(tok.Value, []byte(";")):
+		return nil, nil
+	default:
+		return nil, UnexpectedTokenError{
+			Expected: []TokenType{TokenSymbol},
+			Actual:   tok,
+		}
+	}
+}
+
+func parseEnumDefault(p *parser, enum *Enum) (parserAction[*Enum], error) {
+	tok, err := p.expect(TokenIdentifier)
+	if err != nil {
+		return nil, err
+	}
+	enum.Default = &Ident{
+		Pos:   tok.Pos,
+		Value: string(tok.Value),
+	}
+	return parseSemicolon[*Enum](nil), nil
 }

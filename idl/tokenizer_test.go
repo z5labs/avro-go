@@ -126,6 +126,28 @@ schema int;`,
 				{Pos: Pos{Line: 4, Column: 11}, Type: TokenSymbol, Value: []byte(";")},
 			},
 		},
+		{
+			name: "schema with enum type",
+			src: `schema int;
+enum Suit { HEARTS, DIAMONDS, CLUBS, SPADES };`,
+			expected: []Token{
+				{Pos: Pos{Line: 1, Column: 1}, Type: TokenIdentifier, Value: []byte("schema")},
+				{Pos: Pos{Line: 1, Column: 8}, Type: TokenIdentifier, Value: []byte("int")},
+				{Pos: Pos{Line: 1, Column: 11}, Type: TokenSymbol, Value: []byte(";")},
+				{Pos: Pos{Line: 2, Column: 1}, Type: TokenIdentifier, Value: []byte("enum")},
+				{Pos: Pos{Line: 2, Column: 6}, Type: TokenIdentifier, Value: []byte("Suit")},
+				{Pos: Pos{Line: 2, Column: 11}, Type: TokenSymbol, Value: []byte("{")},
+				{Pos: Pos{Line: 2, Column: 13}, Type: TokenIdentifier, Value: []byte("HEARTS")},
+				{Pos: Pos{Line: 2, Column: 19}, Type: TokenSymbol, Value: []byte(",")},
+				{Pos: Pos{Line: 2, Column: 21}, Type: TokenIdentifier, Value: []byte("DIAMONDS")},
+				{Pos: Pos{Line: 2, Column: 29}, Type: TokenSymbol, Value: []byte(",")},
+				{Pos: Pos{Line: 2, Column: 31}, Type: TokenIdentifier, Value: []byte("CLUBS")},
+				{Pos: Pos{Line: 2, Column: 36}, Type: TokenSymbol, Value: []byte(",")},
+				{Pos: Pos{Line: 2, Column: 38}, Type: TokenIdentifier, Value: []byte("SPADES")},
+				{Pos: Pos{Line: 2, Column: 45}, Type: TokenSymbol, Value: []byte("}")},
+				{Pos: Pos{Line: 2, Column: 46}, Type: TokenSymbol, Value: []byte(";")},
+			},
+		},
 	}
 
 	for _, tc := range testCases {
