@@ -179,6 +179,30 @@ fixed MD5(16;`,
 				Actual:   Token{Pos: Pos{Line: 1, Column: 15}, Type: TokenSymbol, Value: []byte(";")},
 			},
 		},
+		{
+			name: "union schema missing open brace",
+			src:  `schema union null, string };`,
+			expectedErr: UnexpectedTokenError{
+				Expected: []TokenType{TokenSymbol},
+				Actual:   Token{Pos: Pos{Line: 1, Column: 14}, Type: TokenIdentifier, Value: []byte("null")},
+			},
+		},
+		{
+			name: "union schema empty body",
+			src:  `schema union { };`,
+			expectedErr: UnexpectedTokenError{
+				Expected: []TokenType{TokenIdentifier},
+				Actual:   Token{Pos: Pos{Line: 1, Column: 16}, Type: TokenSymbol, Value: []byte("}")},
+			},
+		},
+		{
+			name: "union schema missing close brace",
+			src:  `schema union { null, string ;`,
+			expectedErr: UnexpectedTokenError{
+				Expected: []TokenType{TokenSymbol},
+				Actual:   Token{Pos: Pos{Line: 1, Column: 29}, Type: TokenSymbol, Value: []byte(";")},
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -501,6 +525,124 @@ enum Suit { HEARTS, DIAMONDS };`,
 								{Pos: Pos{Line: 2, Column: 13}, Value: "HEARTS"},
 								{Pos: Pos{Line: 2, Column: 21}, Value: "DIAMONDS"},
 							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "union schema with primitives",
+			src:  `schema union { null, string };`,
+			expected: &File{
+				Schema: &Schema{
+					Pos: Pos{Line: 1, Column: 1},
+					Type: &Union{
+						Types: []Type{
+							Ident{Pos: Pos{Line: 1, Column: 16}, Value: "null"},
+							Ident{Pos: Pos{Line: 1, Column: 22}, Value: "string"},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "union schema single type",
+			src:  `schema union { int };`,
+			expected: &File{
+				Schema: &Schema{
+					Pos: Pos{Line: 1, Column: 1},
+					Type: &Union{
+						Types: []Type{
+							Ident{Pos: Pos{Line: 1, Column: 16}, Value: "int"},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "union schema with trailing comma",
+			src:  `schema union { null, string, };`,
+			expected: &File{
+				Schema: &Schema{
+					Pos: Pos{Line: 1, Column: 1},
+					Type: &Union{
+						Types: []Type{
+							Ident{Pos: Pos{Line: 1, Column: 16}, Value: "null"},
+							Ident{Pos: Pos{Line: 1, Column: 22}, Value: "string"},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "union schema with namespace",
+			src: `namespace com.example;
+schema union { null, int };`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:       Pos{Line: 2, Column: 1},
+					Namespace: "com.example",
+					Type: &Union{
+						Types: []Type{
+							Ident{Pos: Pos{Line: 2, Column: 16}, Value: "null"},
+							Ident{Pos: Pos{Line: 2, Column: 22}, Value: "int"},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "union schema with enum type",
+			src: `schema union { null, Suit };
+enum Suit { HEARTS, DIAMONDS };`,
+			expected: &File{
+				Schema: &Schema{
+					Pos: Pos{Line: 1, Column: 1},
+					Type: &Union{
+						Types: []Type{
+							Ident{Pos: Pos{Line: 1, Column: 16}, Value: "null"},
+							Ident{Pos: Pos{Line: 1, Column: 22}, Value: "Suit"},
+						},
+					},
+					Types: []Type{
+						&Enum{
+							Name: "Suit",
+							Values: []*Ident{
+								{Pos: Pos{Line: 2, Column: 13}, Value: "HEARTS"},
+								{Pos: Pos{Line: 2, Column: 21}, Value: "DIAMONDS"},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "nullable shorthand schema",
+			src:  `schema string?;`,
+			expected: &File{
+				Schema: &Schema{
+					Pos: Pos{Line: 1, Column: 1},
+					Type: &Union{
+						Types: []Type{
+							Ident{Value: "null"},
+							Ident{Pos: Pos{Line: 1, Column: 8}, Value: "string"},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "nullable shorthand schema with namespace",
+			src: `namespace com.example;
+schema int?;`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:       Pos{Line: 2, Column: 1},
+					Namespace: "com.example",
+					Type: &Union{
+						Types: []Type{
+							Ident{Value: "null"},
+							Ident{Pos: Pos{Line: 2, Column: 8}, Value: "int"},
 						},
 					},
 				},

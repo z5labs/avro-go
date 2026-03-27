@@ -218,7 +218,7 @@ func parseFile(p *parser, file *File) (parserAction[*File], error) {
 
 			return parseSchemaType(func(typ Type) (parserAction[*File], error) {
 				file.Schema.Type = typ
-				return parseSemicolon(parseSchemaTypes), nil
+				return parseOptionalNullable(&file.Schema.Type, parseSchemaTypes), nil
 			}), nil
 		case "namespace":
 			file.Schema = &Schema{}
@@ -258,7 +258,7 @@ func parseSchema(p *parser, file *File) (parserAction[*File], error) {
 			file.Schema.Pos = tok.Pos
 			return parseSchemaType(func(typ Type) (parserAction[*File], error) {
 				file.Schema.Type = typ
-				return parseSemicolon(parseSchemaTypes), nil
+				return parseOptionalNullable(&file.Schema.Type, parseSchemaTypes), nil
 			}), nil
 		default:
 			return nil, errors.New("schema definition must follow namespace declaration")
@@ -313,22 +313,49 @@ func parseSemicolon[T any](next parserAction[T]) parserAction[T] {
 	}
 }
 
-func parseSchemaType[T any](f func(Type) (parserAction[T], error)) parserAction[T] {
+func parseOptionalNullable[T any](typePtr *Type, next parserAction[T]) parserAction[T] {
 	return func(p *parser, t T) (parserAction[T], error) {
-		tok, err := p.expect(TokenIdentifier)
+		tok, err := p.expect(TokenSymbol)
 		if err != nil {
 			return nil, err
 		}
-
-		if string(tok.Value) == "map" {
-			m, err := parseMapType(p)
-			if err != nil {
-				return nil, err
+		switch {
+		case bytes.Equal(tok.Value, []byte("?")):
+			*typePtr = &Union{Types: []Type{Ident{Value: "null"}, *typePtr}}
+			return parseSemicolon(next), nil
+		case bytes.Equal(tok.Value, []byte(";")):
+			return next, nil
+		default:
+			return nil, UnexpectedTokenError{
+				Expected: []TokenType{TokenSymbol},
+				Actual:   tok,
 			}
-			return f(m)
 		}
+	}
+}
 
-		return f(Ident{Pos: tok.Pos, Value: string(tok.Value)})
+func parseSchemaType[T any](f func(Type) (parserAction[T], error)) parserAction[T] {
+	return func(p *parser, t T) (parserAction[T], error) {
+		typ, err := parseTypeRef(p)
+		if err != nil {
+			return nil, err
+		}
+		return f(typ)
+	}
+}
+
+func parseTypeRef(p *parser) (Type, error) {
+	tok, err := p.expect(TokenIdentifier)
+	if err != nil {
+		return nil, err
+	}
+	switch string(tok.Value) {
+	case "map":
+		return parseMapType(p)
+	case "union":
+		return parseUnionType(p)
+	default:
+		return Ident{Pos: tok.Pos, Value: string(tok.Value)}, nil
 	}
 }
 
@@ -363,6 +390,98 @@ func parseMapType(p *parser) (*Map, error) {
 	return &Map{
 		Values: &Ident{Pos: valTok.Pos, Value: string(valTok.Value)},
 	}, nil
+}
+
+func parseUnionType(p *parser) (u *Union, err error) {
+	u = &Union{}
+	for action := parseUnionOpenBrace; action != nil && err == nil; {
+		action, err = action(p, u)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return u, nil
+}
+
+func parseUnionOpenBrace(p *parser, u *Union) (parserAction[*Union], error) {
+	tok, err := p.expect(TokenSymbol)
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Equal(tok.Value, []byte("{")) {
+		return nil, UnexpectedTokenError{
+			Expected: []TokenType{TokenSymbol},
+			Actual:   tok,
+		}
+	}
+	return parseUnionMember, nil
+}
+
+func parseUnionMember(p *parser, u *Union) (parserAction[*Union], error) {
+	typ, err := parseTypeRef(p)
+	if err != nil {
+		return nil, err
+	}
+	u.Types = append(u.Types, typ)
+	return parseUnionMemberSep, nil
+}
+
+func parseUnionMemberSep(p *parser, u *Union) (parserAction[*Union], error) {
+	tok, err := p.expect(TokenSymbol)
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case bytes.Equal(tok.Value, []byte(",")):
+		return parseUnionMemberOrClose, nil
+	case bytes.Equal(tok.Value, []byte("}")):
+		return nil, nil
+	default:
+		return nil, UnexpectedTokenError{
+			Expected: []TokenType{TokenSymbol},
+			Actual:   tok,
+		}
+	}
+}
+
+func parseUnionMemberOrClose(p *parser, u *Union) (parserAction[*Union], error) {
+	tok, err := p.expect(TokenIdentifier, TokenSymbol)
+	if err != nil {
+		return nil, err
+	}
+	switch tok.Type {
+	case TokenIdentifier:
+		switch string(tok.Value) {
+		case "map":
+			m, err := parseMapType(p)
+			if err != nil {
+				return nil, err
+			}
+			u.Types = append(u.Types, m)
+		case "union":
+			nested, err := parseUnionType(p)
+			if err != nil {
+				return nil, err
+			}
+			u.Types = append(u.Types, nested)
+		default:
+			u.Types = append(u.Types, Ident{Pos: tok.Pos, Value: string(tok.Value)})
+		}
+		return parseUnionMemberSep, nil
+	case TokenSymbol:
+		if !bytes.Equal(tok.Value, []byte("}")) {
+			return nil, UnexpectedTokenError{
+				Expected: []TokenType{TokenSymbol},
+				Actual:   tok,
+			}
+		}
+		return nil, nil
+	default:
+		return nil, UnexpectedTokenError{
+			Expected: []TokenType{TokenIdentifier, TokenSymbol},
+			Actual:   tok,
+		}
+	}
 }
 
 func parseType(p *parser, schema *Schema) (_ parserAction[*Schema], err error) {
