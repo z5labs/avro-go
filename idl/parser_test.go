@@ -203,6 +203,72 @@ fixed MD5(16;`,
 				Actual:   Token{Pos: Pos{Line: 1, Column: 29}, Type: TokenSymbol, Value: []byte(";")},
 			},
 		},
+		{
+			name: "record missing name",
+			src: `schema int;
+record { string name; };`,
+			expectedErr: UnexpectedTokenError{
+				Expected: []TokenType{TokenIdentifier},
+				Actual:   Token{Pos: Pos{Line: 2, Column: 8}, Type: TokenSymbol, Value: []byte("{")},
+			},
+		},
+		{
+			name: "record missing open brace",
+			src: `schema int;
+record Employee string name; };`,
+			expectedErr: UnexpectedTokenError{
+				Expected: []TokenType{TokenSymbol},
+				Actual:   Token{Pos: Pos{Line: 2, Column: 17}, Type: TokenIdentifier, Value: []byte("string")},
+			},
+		},
+		{
+			name: "record empty body",
+			src: `schema int;
+record Employee { };`,
+			expectedErr: UnexpectedTokenError{
+				Expected: []TokenType{TokenIdentifier},
+				Actual:   Token{Pos: Pos{Line: 2, Column: 19}, Type: TokenSymbol, Value: []byte("}")},
+			},
+		},
+		{
+			name: "record field missing name",
+			src: `schema int;
+record Employee { string ; };`,
+			expectedErr: UnexpectedTokenError{
+				Expected: []TokenType{TokenIdentifier, TokenSymbol},
+				Actual:   Token{Pos: Pos{Line: 2, Column: 26}, Type: TokenSymbol, Value: []byte(";")},
+			},
+		},
+		{
+			name: "record field missing semicolon",
+			src: `schema int;
+record Employee {
+  string name
+}`,
+			expectedErr: UnexpectedTokenError{
+				Expected: []TokenType{TokenSymbol},
+				Actual:   Token{Pos: Pos{Line: 4, Column: 1}, Type: TokenSymbol, Value: []byte("}")},
+			},
+		},
+		{
+			name: "record missing close brace",
+			src: `schema int;
+record Employee {
+  string name;
+;`,
+			expectedErr: UnexpectedTokenError{
+				Expected: []TokenType{TokenIdentifier, TokenSymbol},
+				Actual:   Token{Pos: Pos{Line: 4, Column: 1}, Type: TokenSymbol, Value: []byte(";")},
+			},
+		},
+		{
+			name: "record missing trailing semicolon",
+			src: `schema int;
+record Employee {
+  string name;
+}`,
+			expectedErr: UnexpectedEndOfTokensError{Expected: []TokenType{TokenSymbol}},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -643,6 +709,216 @@ schema int?;`,
 						Types: []Type{
 							Ident{Value: "null"},
 							Ident{Pos: Pos{Line: 2, Column: 8}, Value: "int"},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "schema with single record type with single field",
+			src: `schema int;
+record Employee {
+  string name;
+};`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Employee",
+							Fields: []*Field{
+								{
+									Name: "name",
+									Type: Ident{Pos: Pos{Line: 3, Column: 3}, Value: "string"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "schema with single record type with multiple fields",
+			src: `schema int;
+record Employee {
+  string name;
+  boolean active;
+  long salary;
+};`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Employee",
+							Fields: []*Field{
+								{
+									Name: "name",
+									Type: Ident{Pos: Pos{Line: 3, Column: 3}, Value: "string"},
+								},
+								{
+									Name: "active",
+									Type: Ident{Pos: Pos{Line: 4, Column: 3}, Value: "boolean"},
+								},
+								{
+									Name: "salary",
+									Type: Ident{Pos: Pos{Line: 5, Column: 3}, Value: "long"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "schema with record type with nullable field",
+			src: `schema int;
+record Employee {
+  string? name;
+};`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Employee",
+							Fields: []*Field{
+								{
+									Name: "name",
+									Type: &Union{
+										Types: []Type{
+											Ident{Value: "null"},
+											Ident{Pos: Pos{Line: 3, Column: 3}, Value: "string"},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "schema with record type with map field",
+			src: `schema int;
+record Employee {
+  map<string> metadata;
+};`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Employee",
+							Fields: []*Field{
+								{
+									Name: "metadata",
+									Type: &Map{
+										Values: &Ident{Pos: Pos{Line: 3, Column: 7}, Value: "string"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "schema with record type with union field",
+			src: `schema int;
+record Employee {
+  union { null, string } name;
+};`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Employee",
+							Fields: []*Field{
+								{
+									Name: "name",
+									Type: &Union{
+										Types: []Type{
+											Ident{Pos: Pos{Line: 3, Column: 11}, Value: "null"},
+											Ident{Pos: Pos{Line: 3, Column: 17}, Value: "string"},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "schema with multiple record types",
+			src: `schema int;
+record Employee {
+  string name;
+};
+record Department {
+  string title;
+};`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Employee",
+							Fields: []*Field{
+								{
+									Name: "name",
+									Type: Ident{Pos: Pos{Line: 3, Column: 3}, Value: "string"},
+								},
+							},
+						},
+						&Record{
+							Name: "Department",
+							Fields: []*Field{
+								{
+									Name: "title",
+									Type: Ident{Pos: Pos{Line: 6, Column: 3}, Value: "string"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "schema with record and enum types",
+			src: `schema int;
+enum Status { ACTIVE, INACTIVE };
+record Employee {
+  string name;
+};`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Enum{
+							Name: "Status",
+							Values: []*Ident{
+								{Pos: Pos{Line: 2, Column: 15}, Value: "ACTIVE"},
+								{Pos: Pos{Line: 2, Column: 23}, Value: "INACTIVE"},
+							},
+						},
+						&Record{
+							Name: "Employee",
+							Fields: []*Field{
+								{
+									Name: "name",
+									Type: Ident{Pos: Pos{Line: 4, Column: 3}, Value: "string"},
+								},
+							},
 						},
 					},
 				},
