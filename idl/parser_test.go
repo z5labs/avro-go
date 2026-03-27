@@ -12,6 +12,79 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestParserErrors(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name           string
+		src            string
+		expectedErrMsg string
+		expectedErr    error
+	}{
+		{
+			name:        "empty input",
+			src:         ``,
+			expectedErr: UnexpectedEndOfTokensError{Expected: []TokenType{TokenIdentifier, TokenComment}},
+		},
+		{
+			name:           "file starts with unrecognized keyword",
+			src:            `invalid int;`,
+			expectedErrMsg: "schema idl must start with either 'schema' or 'namespace'",
+		},
+		{
+			name: "namespace not followed by schema keyword",
+			src: `namespace com.example;
+invalid int;`,
+			expectedErrMsg: "schema definition must follow namespace declaration",
+		},
+		{
+			name: "schema missing type identifier",
+			src:  `schema ;`,
+			expectedErr: UnexpectedTokenError{
+				Expected: []TokenType{TokenIdentifier},
+				Actual:   Token{Pos: Pos{Line: 1, Column: 8}, Type: TokenSymbol, Value: []byte(";")},
+			},
+		},
+		{
+			name:        "schema type missing semicolon",
+			src:         "schema int ",
+			expectedErr: UnexpectedEndOfTokensError{Expected: []TokenType{TokenSymbol}},
+		},
+		{
+			name: "schema type followed by wrong symbol",
+			src:  `schema int }`,
+			expectedErr: UnexpectedTokenError{
+				Expected: []TokenType{TokenSymbol},
+				Actual:   Token{Pos: Pos{Line: 1, Column: 12}, Type: TokenSymbol, Value: []byte("}")},
+			},
+		},
+		{
+			name:        "namespace missing semicolon",
+			src:         "namespace com.example ",
+			expectedErr: UnexpectedEndOfTokensError{Expected: []TokenType{TokenSymbol}},
+		},
+		{
+			name:        "namespace with no following tokens",
+			src:         `namespace com.example;`,
+			expectedErr: UnexpectedEndOfTokensError{Expected: []TokenType{TokenIdentifier, TokenComment}},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := Parse(strings.NewReader(tc.src))
+
+			if tc.expectedErrMsg != "" {
+				require.EqualError(t, err, tc.expectedErrMsg)
+				return
+			}
+			require.Equal(t, tc.expectedErr, err)
+		})
+	}
+}
+
 func TestParser(t *testing.T) {
 	t.Parallel()
 

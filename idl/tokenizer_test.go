@@ -13,6 +13,54 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestTokenizerErrors(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name        string
+		src         string
+		expectedErr error
+	}{
+		{
+			name: "unexpected character at start of input",
+			src:  `$schema int;`,
+			expectedErr: UnexpectedCharacterError{
+				Pos: Pos{Line: 1, Column: 2},
+				R:   '$',
+			},
+		},
+		{
+			name: "invalid character after slash",
+			src:  `/xfoo`,
+			expectedErr: UnexpectedCharacterError{
+				Pos: Pos{Line: 1, Column: 3},
+				R:   'x',
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			collect := func(seq iter.Seq2[Token, error]) ([]Token, error) {
+				var tokens []Token
+				for item, err := range seq {
+					if err != nil {
+						return tokens, err
+					}
+					tokens = append(tokens, item)
+				}
+				return tokens, nil
+			}
+
+			_, err := collect(Tokenize(strings.NewReader(tc.src)))
+
+			require.Equal(t, tc.expectedErr, err)
+		})
+	}
+}
+
 func TestTokenizer(t *testing.T) {
 	t.Parallel()
 
