@@ -510,6 +510,13 @@ func parseType(p *parser, schema *Schema) (_ parserAction[*Schema], err error) {
 			}
 			schema.Types = append(schema.Types, fixed)
 			return parseType, nil
+		case "record":
+			rec, err := parseRecord(p)
+			if err != nil {
+				return nil, err
+			}
+			schema.Types = append(schema.Types, rec)
+			return parseType, nil
 		default:
 			return nil, errors.New("unknown type keyword: " + string(tok.Value))
 		}
@@ -698,4 +705,138 @@ func parseFixedCloseParen(p *parser, fixed *Fixed) (parserAction[*Fixed], error)
 		}
 	}
 	return parseSemicolon[*Fixed](nil), nil
+}
+
+func parseRecord(p *parser) (rec *Record, err error) {
+	rec = &Record{}
+	for action := parseRecordName(rec); action != nil && err == nil; {
+		action, err = action(p, rec)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return rec, nil
+}
+
+func parseRecordName(rec *Record) parserAction[*Record] {
+	return parseIdent(func(tok Token) (parserAction[*Record], error) {
+		rec.Name = string(tok.Value)
+		return parseRecordOpenBrace, nil
+	})
+}
+
+func parseRecordOpenBrace(p *parser, rec *Record) (parserAction[*Record], error) {
+	tok, err := p.expect(TokenSymbol)
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Equal(tok.Value, []byte("{")) {
+		return nil, UnexpectedTokenError{
+			Expected: []TokenType{TokenSymbol},
+			Actual:   tok,
+		}
+	}
+	return parseRecordFieldType, nil
+}
+
+func parseRecordFieldType(p *parser, rec *Record) (parserAction[*Record], error) {
+	typ, err := parseTypeRef(p)
+	if err != nil {
+		return nil, err
+	}
+	field := &Field{Type: typ}
+	rec.Fields = append(rec.Fields, field)
+	return parseRecordFieldNullableOrName(field), nil
+}
+
+func parseRecordFieldNullableOrName(field *Field) parserAction[*Record] {
+	return func(p *parser, rec *Record) (parserAction[*Record], error) {
+		tok, err := p.expect(TokenIdentifier, TokenSymbol)
+		if err != nil {
+			return nil, err
+		}
+		switch tok.Type {
+		case TokenIdentifier:
+			field.Name = string(tok.Value)
+			return parseRecordFieldSemicolon, nil
+		case TokenSymbol:
+			if !bytes.Equal(tok.Value, []byte("?")) {
+				return nil, UnexpectedTokenError{
+					Expected: []TokenType{TokenIdentifier, TokenSymbol},
+					Actual:   tok,
+				}
+			}
+			field.Type = &Union{Types: []Type{Ident{Value: "null"}, field.Type}}
+			return parseRecordFieldName(field), nil
+		default:
+			return nil, UnexpectedTokenError{
+				Expected: []TokenType{TokenIdentifier, TokenSymbol},
+				Actual:   tok,
+			}
+		}
+	}
+}
+
+func parseRecordFieldName(field *Field) parserAction[*Record] {
+	return parseIdent(func(tok Token) (parserAction[*Record], error) {
+		field.Name = string(tok.Value)
+		return parseRecordFieldSemicolon, nil
+	})
+}
+
+func parseRecordFieldSemicolon(p *parser, rec *Record) (parserAction[*Record], error) {
+	tok, err := p.expect(TokenSymbol)
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Equal(tok.Value, []byte(";")) {
+		return nil, UnexpectedTokenError{
+			Expected: []TokenType{TokenSymbol},
+			Actual:   tok,
+		}
+	}
+	return parseRecordFieldTypeOrClose, nil
+}
+
+func parseRecordFieldTypeOrClose(p *parser, rec *Record) (parserAction[*Record], error) {
+	tok, err := p.expect(TokenIdentifier, TokenSymbol)
+	if err != nil {
+		return nil, err
+	}
+	switch tok.Type {
+	case TokenIdentifier:
+		var typ Type
+		switch string(tok.Value) {
+		case "map":
+			m, err := parseMapType(p)
+			if err != nil {
+				return nil, err
+			}
+			typ = m
+		case "union":
+			u, err := parseUnionType(p)
+			if err != nil {
+				return nil, err
+			}
+			typ = u
+		default:
+			typ = Ident{Pos: tok.Pos, Value: string(tok.Value)}
+		}
+		field := &Field{Type: typ}
+		rec.Fields = append(rec.Fields, field)
+		return parseRecordFieldNullableOrName(field), nil
+	case TokenSymbol:
+		if !bytes.Equal(tok.Value, []byte("}")) {
+			return nil, UnexpectedTokenError{
+				Expected: []TokenType{TokenIdentifier, TokenSymbol},
+				Actual:   tok,
+			}
+		}
+		return parseSemicolon[*Record](nil), nil
+	default:
+		return nil, UnexpectedTokenError{
+			Expected: []TokenType{TokenIdentifier, TokenSymbol},
+			Actual:   tok,
+		}
+	}
 }
