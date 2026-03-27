@@ -148,6 +148,22 @@ enum Suit { HEARTS, DIAMONDS, CLUBS, SPADES };`,
 				{Pos: Pos{Line: 2, Column: 46}, Type: TokenSymbol, Value: []byte(";")},
 			},
 		},
+		{
+			name: "schema with fixed type",
+			src: `schema int;
+fixed MD5(16);`,
+			expected: []Token{
+				{Pos: Pos{Line: 1, Column: 1}, Type: TokenIdentifier, Value: []byte("schema")},
+				{Pos: Pos{Line: 1, Column: 8}, Type: TokenIdentifier, Value: []byte("int")},
+				{Pos: Pos{Line: 1, Column: 11}, Type: TokenSymbol, Value: []byte(";")},
+				{Pos: Pos{Line: 2, Column: 1}, Type: TokenIdentifier, Value: []byte("fixed")},
+				{Pos: Pos{Line: 2, Column: 7}, Type: TokenIdentifier, Value: []byte("MD5")},
+				{Pos: Pos{Line: 2, Column: 10}, Type: TokenSymbol, Value: []byte("(")},
+				{Pos: Pos{Line: 2, Column: 11}, Type: TokenNumber, Value: []byte("16")},
+				{Pos: Pos{Line: 2, Column: 13}, Type: TokenSymbol, Value: []byte(")")},
+				{Pos: Pos{Line: 2, Column: 14}, Type: TokenSymbol, Value: []byte(";")},
+			},
+		},
 	}
 
 	for _, tc := range testCases {
