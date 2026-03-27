@@ -211,11 +211,16 @@ func parseFile(p *parser, file *File) (parserAction[*File], error) {
 	case TokenIdentifier:
 		switch string(tok.Value) {
 		case "schema":
-			file.Schema = &Schema{Pos: tok.Pos}
+			if file.Schema == nil {
+				file.Schema = &Schema{}
+			}
+			file.Schema.Pos = tok.Pos
 			return parseSchema, nil
 		case "namespace":
-			file.Schema = &Schema{Pos: tok.Pos, Namespace: string(tok.Value)}
-			return parseSchema, nil
+			if file.Schema == nil {
+				file.Schema = &Schema{}
+			}
+			return parseNamespace, nil
 		default:
 			return nil, errors.New("schema idl must start with either 'schema' or 'namespace'")
 		}
@@ -232,6 +237,16 @@ func parseFile(p *parser, file *File) (parserAction[*File], error) {
 			Actual:   tok,
 		}
 	}
+}
+
+func parseNamespace(p *parser, file *File) (parserAction[*File], error) {
+	tok, err := p.expect(TokenIdentifier)
+	if err != nil {
+		return nil, err
+	}
+	file.Schema.Namespace = string(tok.Value)
+
+	return parseSemicolon(parseFile), nil
 }
 
 func parseSchema(p *parser, file *File) (_ parserAction[*File], err error) {
@@ -256,8 +271,8 @@ func parseSchemaType(p *parser, schema *Schema) (parserAction[*Schema], error) {
 	return parseSemicolon(parseTypes), nil
 }
 
-func parseSemicolon(next parserAction[*Schema]) parserAction[*Schema] {
-	return func(p *parser, schema *Schema) (parserAction[*Schema], error) {
+func parseSemicolon[T any](next parserAction[T]) parserAction[T] {
+	return func(p *parser, t T) (parserAction[T], error) {
 		tok, err := p.expect(TokenSymbol)
 		if err != nil {
 			return nil, err
