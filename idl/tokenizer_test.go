@@ -98,10 +98,7 @@ schema int;`,
 
 			tokens, err := collect(Tokenize(strings.NewReader(tc.src)))
 
-			var eot EndOfTokensError
-			require.ErrorAs(t, err, &eot)
-			require.NotEmpty(t, eot.Error())
-
+			require.NoError(t, err)
 			require.Equal(t, tc.expected, tokens)
 		})
 	}

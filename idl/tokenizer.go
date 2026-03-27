@@ -61,16 +61,6 @@ func (tt TokenType) String() string {
 	}
 }
 
-// ErrEndOfTokens is the error returned by the tokenizer when it reaches the end of the input.
-type EndOfTokensError struct {
-	Pos Pos
-}
-
-// Error implements the [error] interface.
-func (e EndOfTokensError) Error() string {
-	return fmt.Sprintf("end of tokens:%d:%d", e.Pos.Line, e.Pos.Column)
-}
-
 // Tokenize the Avro IDL defined in the given reader.
 func Tokenize(r io.Reader) iter.Seq2[Token, error] {
 	return func(yield func(Token, error) bool) {
@@ -185,6 +175,9 @@ func yieldErrorOr(err error, next tokenizerAction) tokenizerAction {
 		if err == nil {
 			return next
 		}
+		if errors.Is(err, io.ErrUnexpectedEOF) {
+			return nil
+		}
 		if !yield(Token{}, err) {
 			return nil
 		}
@@ -205,9 +198,6 @@ func skipWhitespace(next tokenizerAction) tokenizerAction {
 	return func(t *tokenizer, yield func(Token, error) bool) tokenizerAction {
 		var buf bytes.Buffer
 		err := t.copyIf(&buf, unicode.IsSpace)
-		if errors.Is(err, io.ErrUnexpectedEOF) {
-			err = EndOfTokensError{Pos: t.pos}
-		}
 
 		return yieldErrorOr(err, next)
 	}
