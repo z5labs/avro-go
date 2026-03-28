@@ -244,16 +244,19 @@ func (p *parser) read() (Token, error, bool) {
 	return p.next()
 }
 
-func (p *parser) peek() (Token, bool) {
+func (p *parser) peek() (Token, error, bool) {
 	if p.pending != nil {
-		return *p.pending, true
+		return *p.pending, nil, true
 	}
 	tok, err, ok := p.next()
-	if err != nil || !ok {
-		return Token{}, false
+	if err != nil {
+		return Token{}, err, false
+	}
+	if !ok {
+		return Token{}, nil, false
 	}
 	p.pending = &tok
-	return tok, true
+	return tok, nil, true
 }
 
 func (p *parser) expect(expected ...TokenType) (Token, error) {
@@ -280,7 +283,10 @@ type parserAction[T any] func(p *parser, t T) (parserAction[T], error)
 func collectAnnotations(p *parser) ([]*Annotation, error) {
 	var annotations []*Annotation
 	for {
-		tok, ok := p.peek()
+		tok, err, ok := p.peek()
+		if err != nil {
+			return nil, err
+		}
 		if !ok {
 			return annotations, nil
 		}
