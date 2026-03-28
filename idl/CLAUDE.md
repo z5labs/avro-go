@@ -190,6 +190,124 @@ func parseSemicolon(next parserAction[*Schema]) parserAction[*Schema] {
 }
 ```
 
+## Printer Pattern
+
+### Printer Actions
+
+```go
+type printerAction func(pr *printer, f *File) printerAction
+```
+
+- Each action takes a `*printer` and `*File`, returns the next action
+- Return `nil` to end printing
+- The printer accumulates errors in `pr.err`; actions short-circuit when an error is set
+
+### Printer Helper Methods
+
+#### `pr.write(s string)` / `pr.writef(format string, args ...any)`
+
+Write output to the underlying writer. Both no-op if `pr.err` is already set:
+```go
+pr.write("schema ")
+pr.writef("namespace %s;\n", f.Schema.Namespace)
+```
+
+### `writeThen(s string, next printerAction) printerAction`
+
+Writes a string and returns the next action — the printer equivalent of `yieldTokenThen`:
+```go
+return writeThen(";", nil)
+```
+
+### Closure Pattern for Capturing State
+
+Same closure pattern as the tokenizer — return a closure when state (like an index) needs to be captured:
+
+```go
+func printComments(idx int) printerAction {
+    return func(pr *printer, f *File) printerAction {
+        if idx >= len(f.Comments) {
+            return printSchemaKeyword
+        }
+        pr.writef("%s\n", f.Comments[idx].Text)
+        return printComments(idx + 1)
+    }
+}
+```
+
+### Type Dispatch
+
+Use a type switch on the `Type` interface to determine how to print a schema type:
+
+```go
+func printType(t Type, next printerAction) printerAction {
+    return func(pr *printer, f *File) printerAction {
+        switch typ := t.(type) {
+        case Ident:
+            pr.write(typ.Value)
+        }
+        return next
+    }
+}
+```
+
+### Entry Point
+
+The public `Print` function drives the action loop, checking `pr.err` each iteration:
+
+```go
+func Print(w io.Writer, f *File) error {
+    pr := &printer{w: w}
+    for action := printFile; action != nil && pr.err == nil; {
+        action = action(pr, f)
+    }
+    return pr.err
+}
+```
+
+## Testing Style for Printer
+
+### Direct Print Tests
+
+Test with an explicit `*File` input and an expected string output:
+
+```go
+{
+    name: "primitive schema with custom namespace",
+    input: &File{
+        Schema: &Schema{
+            Pos:       Pos{Line: 2, Column: 1},
+            Namespace: "com.example",
+            Type:      Ident{Pos: Pos{Line: 2, Column: 8}, Value: "int"},
+        },
+    },
+    expected: `namespace com.example;
+schema int;`,
+},
+```
+
+### Round-Trip Tests
+
+Validate Parse → Print → Parse produces equivalent ASTs. Compare semantic fields (namespace, comments, types) rather than positions:
+
+```go
+// Parse the original source
+file1, err := Parse(strings.NewReader(tc.src))
+require.NoError(t, err)
+
+// Print the parsed AST
+var buf bytes.Buffer
+err = Print(&buf, file1)
+require.NoError(t, err)
+
+// Parse the printed output
+file2, err := Parse(strings.NewReader(buf.String()))
+require.NoError(t, err)
+
+// Compare semantic fields, ignoring positions
+require.Equal(t, file1.Schema.Namespace, file2.Schema.Namespace)
+```
+
 ## Error Types
 
 ### Tokenizer Errors
