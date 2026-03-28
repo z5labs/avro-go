@@ -543,8 +543,41 @@ schema int?;`,
 					for k, v := range typ1.Properties {
 						require.Equal(t, v, typ2.Properties[k])
 					}
-				}
+					}
 			}
+		})
+	}
+}
+
+func TestPrinterErrors(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name        string
+		input       *File
+		expectedErr string
+	}{
+		{
+			name: "empty union",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: &Union{Types: []Type{}},
+				},
+			},
+			expectedErr: "idl: union must have at least one type",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var buf bytes.Buffer
+			err := Print(&buf, tc.input)
+
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tc.expectedErr)
 		})
 	}
 }

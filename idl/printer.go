@@ -148,10 +148,16 @@ func printType(t Type, next printerAction) printerAction {
 // printUnion prints a union type. Uses shorthand syntax (type?) for nullable
 // unions (exactly null + one other type), verbose syntax otherwise.
 func printUnion(u *Union, next printerAction) printerAction {
-	if isNullableUnion(u) {
-		return printType(u.Types[1], writeThen("?", next))
+	return func(pr *printer, f *File) printerAction {
+		if len(u.Types) == 0 {
+			pr.err = fmt.Errorf("idl: union must have at least one type")
+			return nil
+		}
+		if isNullableUnion(u) {
+			return printType(u.Types[1], writeThen("?", next))
+		}
+		return printUnionVerbose(u, next)
 	}
-	return printUnionVerbose(u, next)
 }
 
 // isNullableUnion returns true if union is exactly [null, T].
