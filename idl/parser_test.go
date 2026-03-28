@@ -394,7 +394,7 @@ enum Suit { HEARTS, DIAMONDS, CLUBS, SPADES }`,
 		{
 			name: "schema with enum type and default",
 			src: `schema int;
-enum Suit { HEARTS, DIAMONDS } = HEARTS`,
+enum Suit { HEARTS, DIAMONDS } = HEARTS;`,
 			expected: &File{
 				Schema: &Schema{
 					Pos:  Pos{Line: 1, Column: 1},
@@ -415,7 +415,7 @@ enum Suit { HEARTS, DIAMONDS } = HEARTS`,
 		{
 			name: "schema with enum type and default followed by another type",
 			src: `schema int;
-enum Suit { HEARTS, DIAMONDS } = HEARTS
+enum Suit { HEARTS, DIAMONDS } = HEARTS;
 enum Color { RED, BLACK }`,
 			expected: &File{
 				Schema: &Schema{

@@ -552,7 +552,7 @@ func parseEnumOptionalDefault(enum *Enum) parserAction[*Schema] {
 				Pos:   defTok.Pos,
 				Value: string(defTok.Value),
 			}
-			return parseType, nil
+			return parseSemicolon(parseType), nil
 		}
 		return dispatchType(tok), nil
 	}
