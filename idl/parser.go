@@ -41,12 +41,49 @@ type Field struct {
 	Type      Type
 	SortOrder SortOrder
 
-	// TODO: add support for default values of fields, which can be any valid
-	// Avro JSON value, including null, boolean, number, string, array, and
-	// object.
-	//
-	// Default   any
+	// A nil Value means no default was specified.
+	Default Value
 }
+
+// Value represents a value.
+type Value interface {
+	val()
+}
+
+// NullValue represents a JSON null value.
+type NullValue struct{}
+
+func (NullValue) val() {}
+
+// BoolValue represents a JSON boolean value.
+type BoolValue bool
+
+func (BoolValue) val() {}
+
+// IntValue represents a JSON integer value.
+type IntValue int64
+
+func (IntValue) val() {}
+
+// FloatValue represents a JSON floating-point value.
+type FloatValue float64
+
+func (FloatValue) val() {}
+
+// StringValue represents a JSON string value.
+type StringValue string
+
+func (StringValue) val() {}
+
+// ArrayValue represents a JSON array value.
+type ArrayValue []Value
+
+func (ArrayValue) val() {}
+
+// ObjectValue represents a JSON object value.
+type ObjectValue map[string]Value
+
+func (ObjectValue) val() {}
 
 // Type represents a type in the Avro IDL.
 type Type interface {
@@ -180,11 +217,25 @@ func Parse(r io.Reader) (file *File, err error) {
 }
 
 type parser struct {
-	next func() (Token, error, bool)
+	next    func() (Token, error, bool)
+	pending *Token
+}
+
+func (p *parser) unread(tok Token) {
+	p.pending = &tok
 }
 
 func (p *parser) expect(expected ...TokenType) (Token, error) {
-	tok, err, ok := p.next()
+	var tok Token
+	var err error
+	var ok bool
+	if p.pending != nil {
+		tok = *p.pending
+		p.pending = nil
+		ok = true
+	} else {
+		tok, err, ok = p.next()
+	}
 	if err != nil {
 		return Token{}, err
 	}
@@ -758,7 +809,7 @@ func parseRecordFieldNullableOrName(field *Field) parserAction[*Record] {
 		switch tok.Type {
 		case TokenIdentifier:
 			field.Name = string(tok.Value)
-			return parseRecordFieldSemicolon, nil
+			return parseRecordFieldDefaultOrSemicolon(field), nil
 		case TokenSymbol:
 			if !bytes.Equal(tok.Value, []byte("?")) {
 				return nil, UnexpectedTokenError{
@@ -780,8 +831,176 @@ func parseRecordFieldNullableOrName(field *Field) parserAction[*Record] {
 func parseRecordFieldName(field *Field) parserAction[*Record] {
 	return parseIdent(func(tok Token) (parserAction[*Record], error) {
 		field.Name = string(tok.Value)
-		return parseRecordFieldSemicolon, nil
+		return parseRecordFieldDefaultOrSemicolon(field), nil
 	})
+}
+
+func parseRecordFieldDefaultOrSemicolon(field *Field) parserAction[*Record] {
+	return func(p *parser, rec *Record) (parserAction[*Record], error) {
+		tok, err := p.expect(TokenSymbol)
+		if err != nil {
+			return nil, err
+		}
+		switch {
+		case bytes.Equal(tok.Value, []byte("=")):
+			return parseRecordFieldDefaultValue(field), nil
+		case bytes.Equal(tok.Value, []byte(";")):
+			return parseRecordFieldTypeOrClose, nil
+		default:
+			return nil, UnexpectedTokenError{
+				Expected: []TokenType{TokenSymbol},
+				Actual:   tok,
+			}
+		}
+	}
+}
+
+func parseRecordFieldDefaultValue(field *Field) parserAction[*Record] {
+	return func(p *parser, rec *Record) (parserAction[*Record], error) {
+		val, err := parseJSONValue(p)
+		if err != nil {
+			return nil, err
+		}
+		field.Default = val
+		return parseRecordFieldSemicolon, nil
+	}
+}
+
+func parseJSONValue(p *parser) (Value, error) {
+	tok, err := p.expect(TokenIdentifier, TokenNumber, TokenString, TokenSymbol)
+	if err != nil {
+		return nil, err
+	}
+	switch tok.Type {
+	case TokenIdentifier:
+		switch string(tok.Value) {
+		case "null":
+			return NullValue{}, nil
+		case "true":
+			return BoolValue(true), nil
+		case "false":
+			return BoolValue(false), nil
+		default:
+			return StringValue(tok.Value), nil
+		}
+	case TokenNumber:
+		s := string(tok.Value)
+		if strings.Contains(s, ".") {
+			f, err := strconv.ParseFloat(s, 64)
+			if err != nil {
+				return nil, err
+			}
+			return FloatValue(f), nil
+		}
+		i, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		return IntValue(i), nil
+	case TokenString:
+		return StringValue(tok.Value), nil
+	case TokenSymbol:
+		switch {
+		case bytes.Equal(tok.Value, []byte("[")):
+			return parseJSONArray(p)
+		case bytes.Equal(tok.Value, []byte("{")):
+			return parseJSONObject(p)
+		default:
+			return nil, UnexpectedTokenError{
+				Expected: []TokenType{TokenSymbol},
+				Actual:   tok,
+			}
+		}
+	default:
+		return nil, UnexpectedTokenError{
+			Expected: []TokenType{TokenIdentifier, TokenNumber, TokenString, TokenSymbol},
+			Actual:   tok,
+		}
+	}
+}
+
+func parseJSONArray(p *parser) (ArrayValue, error) {
+	var arr ArrayValue
+	tok, err := p.expect(TokenIdentifier, TokenNumber, TokenString, TokenSymbol)
+	if err != nil {
+		return nil, err
+	}
+	if tok.Type == TokenSymbol && bytes.Equal(tok.Value, []byte("]")) {
+		return arr, nil
+	}
+	p.unread(tok)
+	for {
+		val, err := parseJSONValue(p)
+		if err != nil {
+			return nil, err
+		}
+		arr = append(arr, val)
+		sep, err := p.expect(TokenSymbol)
+		if err != nil {
+			return nil, err
+		}
+		if bytes.Equal(sep.Value, []byte("]")) {
+			return arr, nil
+		}
+		if !bytes.Equal(sep.Value, []byte(",")) {
+			return nil, UnexpectedTokenError{
+				Expected: []TokenType{TokenSymbol},
+				Actual:   sep,
+			}
+		}
+	}
+}
+
+func parseJSONObject(p *parser) (ObjectValue, error) {
+	obj := make(ObjectValue)
+	tok, err := p.expect(TokenString, TokenSymbol)
+	if err != nil {
+		return nil, err
+	}
+	if tok.Type == TokenSymbol && bytes.Equal(tok.Value, []byte("}")) {
+		return obj, nil
+	}
+	if tok.Type != TokenString {
+		return nil, UnexpectedTokenError{
+			Expected: []TokenType{TokenString},
+			Actual:   tok,
+		}
+	}
+	for {
+		key := string(tok.Value)
+		colon, err := p.expect(TokenSymbol)
+		if err != nil {
+			return nil, err
+		}
+		if !bytes.Equal(colon.Value, []byte(":")) {
+			return nil, UnexpectedTokenError{
+				Expected: []TokenType{TokenSymbol},
+				Actual:   colon,
+			}
+		}
+		val, err := parseJSONValue(p)
+		if err != nil {
+			return nil, err
+		}
+		obj[key] = val
+		sep, err := p.expect(TokenSymbol)
+		if err != nil {
+			return nil, err
+		}
+		if bytes.Equal(sep.Value, []byte("}")) {
+			return obj, nil
+		}
+		if !bytes.Equal(sep.Value, []byte(",")) {
+			return nil, UnexpectedTokenError{
+				Expected: []TokenType{TokenSymbol},
+				Actual:   sep,
+			}
+		}
+		tok, err = p.expect(TokenString)
+		if err != nil {
+			return nil, err
+		}
+	}
 }
 
 func parseRecordFieldSemicolon(p *parser, rec *Record) (parserAction[*Record], error) {
