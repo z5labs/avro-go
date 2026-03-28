@@ -868,7 +868,7 @@ fixed MD5(16);
 					for k, v := range typ1.Properties {
 						require.Equal(t, v, typ2.Properties[k])
 					}
-					}
+				}
 			}
 		})
 	}
