@@ -429,6 +429,44 @@ record Employee {
 				{Pos: Pos{Line: 5, Column: 2}, Type: TokenSymbol, Value: []byte(";")},
 			},
 		},
+		{
+			name: "doc comment single line",
+			src:  `/** doc comment */`,
+			expected: []Token{
+				{Pos: Pos{Line: 1, Column: 1}, Type: TokenDocComment, Value: []byte("/** doc comment */")},
+			},
+		},
+		{
+			name: "regular multi line comment remains TokenComment",
+			src:  `/* regular comment */`,
+			expected: []Token{
+				{Pos: Pos{Line: 1, Column: 1}, Type: TokenComment, Value: []byte("/* regular comment */")},
+			},
+		},
+		{
+			name: "doc comment multi line",
+			src: `/**
+ * This is documentation
+ * for a type.
+ */`,
+			expected: []Token{
+				{Pos: Pos{Line: 1, Column: 1}, Type: TokenDocComment, Value: []byte("/**\n * This is documentation\n * for a type.\n */")},
+			},
+		},
+		{
+			name: "minimal doc comment",
+			src:  `/***/`,
+			expected: []Token{
+				{Pos: Pos{Line: 1, Column: 1}, Type: TokenDocComment, Value: []byte("/***/")},
+			},
+		},
+		{
+			name: "empty comment not doc comment",
+			src:  `/**/`,
+			expected: []Token{
+				{Pos: Pos{Line: 1, Column: 1}, Type: TokenComment, Value: []byte("/**/")},
+			},
+		},
 	}
 
 	for _, tc := range testCases {

@@ -24,7 +24,7 @@ func TestParserErrors(t *testing.T) {
 		{
 			name:        "empty input",
 			src:         ``,
-			expectedErr: UnexpectedEndOfTokensError{Expected: []TokenType{TokenIdentifier, TokenComment}},
+			expectedErr: UnexpectedEndOfTokensError{Expected: []TokenType{TokenIdentifier, TokenComment, TokenDocComment}},
 		},
 		{
 			name:           "file starts with unrecognized keyword",
@@ -110,7 +110,7 @@ enum Suit { HEARTS } =`,
 		{
 			name:        "namespace with no following tokens",
 			src:         `namespace com.example;`,
-			expectedErr: UnexpectedEndOfTokensError{Expected: []TokenType{TokenIdentifier, TokenComment}},
+			expectedErr: UnexpectedEndOfTokensError{Expected: []TokenType{TokenIdentifier, TokenComment, TokenDocComment}},
 		},
 		{
 			name: "fixed missing name",
@@ -1579,6 +1579,167 @@ fixed MD5(16);`,
 							Name:      "MD5",
 							Namespace: "org.example",
 							Size:      16,
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "doc comment before record",
+			src: `schema int;
+/** This is a record. */
+record Employee {
+  string name;
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Doc:  "This is a record.",
+							Name: "Employee",
+							Fields: []*Field{
+								{Name: "name", Type: Ident{Pos: Pos{Line: 4, Column: 3}, Value: "string"}},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "doc comment before field",
+			src: `schema int;
+record Employee {
+  /** Employee's full name. */
+  string name;
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Employee",
+							Fields: []*Field{
+								{Doc: "Employee's full name.", Name: "name", Type: Ident{Pos: Pos{Line: 4, Column: 3}, Value: "string"}},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "doc comment before enum",
+			src: `schema int;
+/** Card suits. */
+enum Suit { HEARTS, DIAMONDS }`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Enum{
+							Doc:  "Card suits.",
+							Name: "Suit",
+							Values: []*Ident{
+								{Pos: Pos{Line: 3, Column: 13}, Value: "HEARTS"},
+								{Pos: Pos{Line: 3, Column: 21}, Value: "DIAMONDS"},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "doc comment before fixed",
+			src: `schema int;
+/** MD5 hash. */
+fixed MD5(16);`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Fixed{
+							Doc:  "MD5 hash.",
+							Name: "MD5",
+							Size: 16,
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "doc comment with annotations on record",
+			src: `schema int;
+/** Documented record. */
+@namespace("org.example")
+record Employee {
+  string name;
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Doc:       "Documented record.",
+							Name:      "Employee",
+							Namespace: "org.example",
+							Fields: []*Field{
+								{Name: "name", Type: Ident{Pos: Pos{Line: 5, Column: 3}, Value: "string"}},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "multi line doc comment stripped",
+			src: `schema int;
+/**
+ * This is a multi-line
+ * documentation string.
+ */
+record Employee {
+  string name;
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Doc:  "This is a multi-line\ndocumentation string.",
+							Name: "Employee",
+							Fields: []*Field{
+								{Name: "name", Type: Ident{Pos: Pos{Line: 7, Column: 3}, Value: "string"}},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "doc comment on second field",
+			src: `schema int;
+record Employee {
+  string name;
+  /** Employee's age. */
+  int age;
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Employee",
+							Fields: []*Field{
+								{Name: "name", Type: Ident{Pos: Pos{Line: 3, Column: 3}, Value: "string"}},
+								{Doc: "Employee's age.", Name: "age", Type: Ident{Pos: Pos{Line: 5, Column: 3}, Value: "int"}},
+							},
 						},
 					},
 				},
