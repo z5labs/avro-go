@@ -491,6 +491,158 @@ schema array<string>;`,
 			},
 			expected: `schema array<array<int>>;`,
 		},
+		// Fixed type tests
+		{
+			name: "basic fixed type",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Fixed{
+							Name: "MD5",
+							Size: 16,
+						},
+					},
+				},
+			},
+			expected: `schema int;
+fixed MD5(16);
+`,
+		},
+		{
+			name: "fixed with doc comment",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Fixed{
+							Doc:  "MD5 hash.",
+							Name: "MD5",
+							Size: 16,
+						},
+					},
+				},
+			},
+			expected: `schema int;
+/** MD5 hash. */
+fixed MD5(16);
+`,
+		},
+		{
+			name: "fixed with namespace",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Fixed{
+							Name:      "MD5",
+							Namespace: "org.example",
+							Size:      16,
+						},
+					},
+				},
+			},
+			expected: `schema int;
+@namespace("org.example")
+fixed MD5(16);
+`,
+		},
+		{
+			name: "fixed with aliases",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Fixed{
+							Name:    "MD5",
+							Aliases: []string{"Hash", "Digest"},
+							Size:    16,
+						},
+					},
+				},
+			},
+			expected: `schema int;
+@aliases(["Hash", "Digest"])
+fixed MD5(16);
+`,
+		},
+		{
+			name: "fixed with custom property",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Fixed{
+							Name: "MD5",
+							Size: 16,
+							Properties: map[string]Value{
+								"version": IntValue(1),
+							},
+						},
+					},
+				},
+			},
+			expected: `schema int;
+@version(1)
+fixed MD5(16);
+`,
+		},
+		{
+			name: "fixed with all annotations",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Fixed{
+							Doc:       "MD5 hash.",
+							Name:      "MD5",
+							Namespace: "org.example",
+							Aliases:   []string{"Hash"},
+							Size:      16,
+							Properties: map[string]Value{
+								"version": IntValue(1),
+							},
+						},
+					},
+				},
+			},
+			expected: `schema int;
+/** MD5 hash. */
+@namespace("org.example")
+@aliases(["Hash"])
+@version(1)
+fixed MD5(16);
+`,
+		},
+		{
+			name: "multiple fixed types",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Fixed{
+							Name: "MD5",
+							Size: 16,
+						},
+						&Fixed{
+							Name: "SHA256",
+							Size: 32,
+						},
+					},
+				},
+			},
+			expected: `schema int;
+fixed MD5(16);
+fixed SHA256(32);
+`,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -609,6 +761,28 @@ schema int?;`,
 			src: `namespace com.example;
 schema map<int>;`,
 		},
+		{
+			name: "basic fixed type",
+			src: `schema int;
+fixed MD5(16);
+`,
+		},
+		{
+			name: "fixed with namespace",
+			src: `schema int;
+@namespace("org.example")
+fixed MD5(16);
+`,
+		},
+		{
+			name: "fixed with all annotations",
+			src: `schema int;
+/** MD5 hash. */
+@namespace("org.example")
+@aliases(["Hash", "Digest"])
+fixed MD5(16);
+`,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -678,6 +852,18 @@ schema map<int>;`,
 					} else {
 						require.Nil(t, typ2.Default)
 					}
+					require.Equal(t, len(typ1.Properties), len(typ2.Properties))
+					for k, v := range typ1.Properties {
+						require.Equal(t, v, typ2.Properties[k])
+					}
+				case *Fixed:
+					typ2, ok := file2.Schema.Types[i].(*Fixed)
+					require.True(t, ok, "expected *Fixed at index %d", i)
+					require.Equal(t, typ1.Doc, typ2.Doc)
+					require.Equal(t, typ1.Name, typ2.Name)
+					require.Equal(t, typ1.Namespace, typ2.Namespace)
+					require.Equal(t, typ1.Aliases, typ2.Aliases)
+					require.Equal(t, typ1.Size, typ2.Size)
 					require.Equal(t, len(typ1.Properties), len(typ2.Properties))
 					for k, v := range typ1.Properties {
 						require.Equal(t, v, typ2.Properties[k])
