@@ -68,6 +68,20 @@ func TestTokenizerErrors(t *testing.T) {
 				Value: "-.5",
 			},
 		},
+		{
+			name: "annotation with empty name",
+			src:  `@(`,
+			expectedErr: InvalidAnnotationError{
+				Pos: Pos{Line: 1, Column: 1},
+			},
+		},
+		{
+			name: "annotation with space after at sign",
+			src:  `@ foo`,
+			expectedErr: InvalidAnnotationError{
+				Pos: Pos{Line: 1, Column: 1},
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -342,6 +356,52 @@ record Counter {
 				{Pos: Pos{Line: 3, Column: 15}, Type: TokenNumber, Value: []byte("42")},
 				{Pos: Pos{Line: 3, Column: 17}, Type: TokenSymbol, Value: []byte(";")},
 				{Pos: Pos{Line: 4, Column: 1}, Type: TokenSymbol, Value: []byte("}")},
+			},
+		},
+		{
+			name: "annotation with simple name",
+			src:  `@order`,
+			expected: []Token{
+				{Pos: Pos{Line: 1, Column: 1}, Type: TokenAnnotation, Value: []byte("order")},
+			},
+		},
+		{
+			name: "annotation with dashes in name",
+			src:  `@java-class`,
+			expected: []Token{
+				{Pos: Pos{Line: 1, Column: 1}, Type: TokenAnnotation, Value: []byte("java-class")},
+			},
+		},
+		{
+			name: "annotation with dots in name",
+			src:  `@my.custom.prop`,
+			expected: []Token{
+				{Pos: Pos{Line: 1, Column: 1}, Type: TokenAnnotation, Value: []byte("my.custom.prop")},
+			},
+		},
+		{
+			name: "annotation with string value before identifier",
+			src:  `@namespace("org.foo") record`,
+			expected: []Token{
+				{Pos: Pos{Line: 1, Column: 1}, Type: TokenAnnotation, Value: []byte("namespace")},
+				{Pos: Pos{Line: 1, Column: 11}, Type: TokenSymbol, Value: []byte("(")},
+				{Pos: Pos{Line: 1, Column: 12}, Type: TokenString, Value: []byte("org.foo")},
+				{Pos: Pos{Line: 1, Column: 21}, Type: TokenSymbol, Value: []byte(")")},
+				{Pos: Pos{Line: 1, Column: 23}, Type: TokenIdentifier, Value: []byte("record")},
+			},
+		},
+		{
+			name: "annotation with array value",
+			src:  `@aliases(["old", "ancient"])`,
+			expected: []Token{
+				{Pos: Pos{Line: 1, Column: 1}, Type: TokenAnnotation, Value: []byte("aliases")},
+				{Pos: Pos{Line: 1, Column: 9}, Type: TokenSymbol, Value: []byte("(")},
+				{Pos: Pos{Line: 1, Column: 10}, Type: TokenSymbol, Value: []byte("[")},
+				{Pos: Pos{Line: 1, Column: 11}, Type: TokenString, Value: []byte("old")},
+				{Pos: Pos{Line: 1, Column: 16}, Type: TokenSymbol, Value: []byte(",")},
+				{Pos: Pos{Line: 1, Column: 18}, Type: TokenString, Value: []byte("ancient")},
+				{Pos: Pos{Line: 1, Column: 27}, Type: TokenSymbol, Value: []byte("]")},
+				{Pos: Pos{Line: 1, Column: 28}, Type: TokenSymbol, Value: []byte(")")},
 			},
 		},
 		{
