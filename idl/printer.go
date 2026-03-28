@@ -135,12 +135,50 @@ func printType(t Type, next printerAction) printerAction {
 			pr.write(typ.Value)
 		case *Enum:
 			return printEnum(typ, next)
+		case *Union:
+			return printUnion(typ, next)
 		default:
 			pr.err = fmt.Errorf("idl: unsupported schema type %T in printer", typ)
 			return nil
 		}
 		return next
 	}
+}
+
+// printUnion prints a union type. Uses shorthand syntax (type?) for nullable
+// unions (exactly null + one other type), verbose syntax otherwise.
+func printUnion(u *Union, next printerAction) printerAction {
+	if isNullableUnion(u) {
+		return printType(u.Types[1], writeThen("?", next))
+	}
+	return printUnionVerbose(u, next)
+}
+
+// isNullableUnion returns true if union is exactly [null, T].
+func isNullableUnion(u *Union) bool {
+	if len(u.Types) != 2 {
+		return false
+	}
+	if ident, ok := u.Types[0].(Ident); ok && ident.Value == "null" {
+		return true
+	}
+	return false
+}
+
+// printUnionVerbose prints union { type1, type2, ... } format.
+func printUnionVerbose(u *Union, next printerAction) printerAction {
+	return writeThen("union { ", printUnionTypes(u.Types, 0, writeThen(" }", next)))
+}
+
+// printUnionTypes prints union member types with comma separators.
+func printUnionTypes(types []Type, idx int, next printerAction) printerAction {
+	if idx >= len(types) {
+		return next
+	}
+	if idx > 0 {
+		return writeThen(", ", printType(types[idx], printUnionTypes(types, idx+1, next)))
+	}
+	return printType(types[idx], printUnionTypes(types, idx+1, next))
 }
 
 // printEnum prints an enum type definition.
