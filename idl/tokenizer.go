@@ -38,6 +38,7 @@ type TokenType int
 
 const (
 	TokenComment    TokenType = iota // e.g. // comment or /* comment */
+	TokenDocComment                  // e.g. /** doc comment */
 	TokenIdentifier                  // e.g. schema, enum, record, namespace, etc.
 	TokenSymbol                      // e.g. ";", "<", ">", "{", "}", "(", ")", "[", "]", ",", "=", "?", "`"
 	TokenString                      // e.g. "string"
@@ -49,6 +50,8 @@ func (tt TokenType) String() string {
 	switch tt {
 	case TokenComment:
 		return "Comment"
+	case TokenDocComment:
+		return "DocComment"
 	case TokenIdentifier:
 		return "Identifier"
 	case TokenSymbol:
@@ -332,10 +335,17 @@ func tokenizeMultiLineComment(pos Pos) tokenizerAction {
 		err := t.copyUntil(&comment, []rune{'*', '/'})
 		comment.Write([]byte{'*', '/'})
 
+		// Check if this is a doc comment (starts with /** and is longer than /**/)
+		tokenType := TokenComment
+		val := comment.Bytes()
+		if len(val) > 4 && val[2] == '*' {
+			tokenType = TokenDocComment
+		}
+
 		return yieldErrorOr(
 			err,
 			yieldTokenThen(
-				Token{Pos: pos, Type: TokenComment, Value: comment.Bytes()},
+				Token{Pos: pos, Type: tokenType, Value: val},
 				skipWhitespace(tokenizeIDL),
 			),
 		)
