@@ -365,6 +365,132 @@ schema int?;`,
 			},
 			expected: `schema union { int };`,
 		},
+		{
+			name: "basic map schema",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: &Map{Values: &Ident{Value: "string"}},
+				},
+			},
+			expected: `schema map<string>;`,
+		},
+		{
+			name: "map schema with namespace",
+			input: &File{
+				Schema: &Schema{
+					Pos:       Pos{Line: 2, Column: 1},
+					Namespace: "com.example",
+					Type:      &Map{Values: &Ident{Value: "int"}},
+				},
+			},
+			expected: `namespace com.example;
+schema map<int>;`,
+		},
+		{
+			name: "nullable map shorthand",
+			input: &File{
+				Schema: &Schema{
+					Pos: Pos{Line: 1, Column: 1},
+					Type: &Union{
+						Types: []Type{
+							Ident{Value: "null"},
+							&Map{Values: &Ident{Value: "string"}},
+						},
+					},
+				},
+			},
+			expected: `schema map<string>?;`,
+		},
+		{
+			name: "map in verbose union",
+			input: &File{
+				Schema: &Schema{
+					Pos: Pos{Line: 1, Column: 1},
+					Type: &Union{
+						Types: []Type{
+							Ident{Value: "null"},
+							&Map{Values: &Ident{Value: "int"}},
+							Ident{Value: "string"},
+						},
+					},
+				},
+			},
+			expected: `schema union { null, map<int>, string };`,
+		},
+		{
+			name: "basic array schema",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: &Array{Items: Ident{Value: "int"}},
+				},
+			},
+			expected: `schema array<int>;`,
+		},
+		{
+			name: "array schema with namespace",
+			input: &File{
+				Schema: &Schema{
+					Pos:       Pos{Line: 2, Column: 1},
+					Namespace: "com.example",
+					Type:      &Array{Items: Ident{Value: "string"}},
+				},
+			},
+			expected: `namespace com.example;
+schema array<string>;`,
+		},
+		{
+			name: "nullable array shorthand",
+			input: &File{
+				Schema: &Schema{
+					Pos: Pos{Line: 1, Column: 1},
+					Type: &Union{
+						Types: []Type{
+							Ident{Value: "null"},
+							&Array{Items: Ident{Value: "int"}},
+						},
+					},
+				},
+			},
+			expected: `schema array<int>?;`,
+		},
+		{
+			name: "array in verbose union",
+			input: &File{
+				Schema: &Schema{
+					Pos: Pos{Line: 1, Column: 1},
+					Type: &Union{
+						Types: []Type{
+							Ident{Value: "null"},
+							&Array{Items: Ident{Value: "string"}},
+							Ident{Value: "int"},
+						},
+					},
+				},
+			},
+			expected: `schema union { null, array<string>, int };`,
+		},
+		{
+			name: "nested map in array",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: &Array{Items: &Map{Values: &Ident{Value: "string"}}},
+				},
+			},
+			expected: `schema array<map<string>>;`,
+		},
+		{
+			name: "nested arrays",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: &Array{Items: &Array{Items: Ident{Value: "int"}}},
+				},
+			},
+			expected: `schema array<array<int>>;`,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -474,6 +600,15 @@ schema int?;`,
 			name: "single-type union",
 			src:  `schema union { int };`,
 		},
+		{
+			name: "basic map schema",
+			src:  `schema map<string>;`,
+		},
+		{
+			name: "map schema with namespace",
+			src: `namespace com.example;
+schema map<int>;`,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -516,6 +651,10 @@ schema int?;`,
 					require.True(t, ok1 && ok2, "expected Ident types in union")
 					require.Equal(t, id1.Value, id2.Value)
 				}
+			case *Map:
+				t2, ok := file2.Schema.Type.(*Map)
+				require.True(t, ok, "expected *Map")
+				require.Equal(t, t1.Values.Value, t2.Values.Value)
 			}
 
 			// Compare Schema.Types (e.g., enums, records)

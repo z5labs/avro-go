@@ -137,6 +137,10 @@ func printType(t Type, next printerAction) printerAction {
 			return printEnum(typ, next)
 		case *Union:
 			return printUnion(typ, next)
+		case *Map:
+			return printMap(typ, next)
+		case *Array:
+			return printArray(typ, next)
 		default:
 			pr.err = fmt.Errorf("idl: unsupported schema type %T in printer", typ)
 			return nil
@@ -185,6 +189,23 @@ func printUnionTypes(types []Type, idx int, next printerAction) printerAction {
 		return writeThen(", ", printType(types[idx], printUnionTypes(types, idx+1, next)))
 	}
 	return printType(types[idx], printUnionTypes(types, idx+1, next))
+}
+
+// printMap prints a map type in the form map<valueType>.
+func printMap(m *Map, next printerAction) printerAction {
+	return func(pr *printer, f *File) printerAction {
+		if m == nil || m.Values == nil {
+			pr.err = fmt.Errorf("idl: map has nil Values")
+			return nil
+		}
+		pr.writef("map<%s>", m.Values.Value)
+		return next
+	}
+}
+
+// printArray prints an array type in the form array<itemType>.
+func printArray(a *Array, next printerAction) printerAction {
+	return writeThen("array<", printType(a.Items, writeThen(">", next)))
 }
 
 // printEnum prints an enum type definition.
