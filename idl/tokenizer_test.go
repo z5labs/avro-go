@@ -37,6 +37,13 @@ func TestTokenizerErrors(t *testing.T) {
 				R:   'x',
 			},
 		},
+		{
+			name: "unterminated string literal",
+			src:  `"hello`,
+			expectedErr: UnterminatedStringError{
+				Pos: Pos{Line: 1, Column: 1},
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -218,6 +225,99 @@ record Employee {
 				{Pos: Pos{Line: 3, Column: 14}, Type: TokenSymbol, Value: []byte(";")},
 				{Pos: Pos{Line: 4, Column: 1}, Type: TokenSymbol, Value: []byte("}")},
 				{Pos: Pos{Line: 4, Column: 2}, Type: TokenSymbol, Value: []byte(";")},
+			},
+		},
+		{
+			name: "string literal",
+			src:  `"hello"`,
+			expected: []Token{
+				{Pos: Pos{Line: 1, Column: 1}, Type: TokenString, Value: []byte("hello")},
+			},
+		},
+		{
+			name: "empty string literal",
+			src:  `""`,
+			expected: []Token{
+				{Pos: Pos{Line: 1, Column: 1}, Type: TokenString, Value: nil},
+			},
+		},
+		{
+			name: "string literal with escape sequences",
+			src:  `"say \"hi\""`,
+			expected: []Token{
+				{Pos: Pos{Line: 1, Column: 1}, Type: TokenString, Value: []byte(`say \"hi\"`)},
+			},
+		},
+		{
+			name: "decimal number",
+			src:  `45.67`,
+			expected: []Token{
+				{Pos: Pos{Line: 1, Column: 1}, Type: TokenNumber, Value: []byte("45.67")},
+			},
+		},
+		{
+			name: "negative integer",
+			src:  `-1`,
+			expected: []Token{
+				{Pos: Pos{Line: 1, Column: 1}, Type: TokenNumber, Value: []byte("-1")},
+			},
+		},
+		{
+			name: "negative decimal number",
+			src:  `-3.14`,
+			expected: []Token{
+				{Pos: Pos{Line: 1, Column: 1}, Type: TokenNumber, Value: []byte("-3.14")},
+			},
+		},
+		{
+			name: "colon symbol",
+			src:  `"key" : "value"`,
+			expected: []Token{
+				{Pos: Pos{Line: 1, Column: 1}, Type: TokenString, Value: []byte("key")},
+				{Pos: Pos{Line: 1, Column: 7}, Type: TokenSymbol, Value: []byte(":")},
+				{Pos: Pos{Line: 1, Column: 9}, Type: TokenString, Value: []byte("value")},
+			},
+		},
+		{
+			name: "record field with string default value",
+			src: `schema int;
+record Employee {
+  string name = "unknown";
+}`,
+			expected: []Token{
+				{Pos: Pos{Line: 1, Column: 1}, Type: TokenIdentifier, Value: []byte("schema")},
+				{Pos: Pos{Line: 1, Column: 8}, Type: TokenIdentifier, Value: []byte("int")},
+				{Pos: Pos{Line: 1, Column: 11}, Type: TokenSymbol, Value: []byte(";")},
+				{Pos: Pos{Line: 2, Column: 1}, Type: TokenIdentifier, Value: []byte("record")},
+				{Pos: Pos{Line: 2, Column: 8}, Type: TokenIdentifier, Value: []byte("Employee")},
+				{Pos: Pos{Line: 2, Column: 17}, Type: TokenSymbol, Value: []byte("{")},
+				{Pos: Pos{Line: 3, Column: 3}, Type: TokenIdentifier, Value: []byte("string")},
+				{Pos: Pos{Line: 3, Column: 10}, Type: TokenIdentifier, Value: []byte("name")},
+				{Pos: Pos{Line: 3, Column: 15}, Type: TokenSymbol, Value: []byte("=")},
+				{Pos: Pos{Line: 3, Column: 17}, Type: TokenString, Value: []byte("unknown")},
+				{Pos: Pos{Line: 3, Column: 26}, Type: TokenSymbol, Value: []byte(";")},
+				{Pos: Pos{Line: 4, Column: 1}, Type: TokenSymbol, Value: []byte("}")},
+			},
+		},
+		{
+			name: "record field with integer default value",
+			src: `schema int;
+record Counter {
+  int count = 42;
+}`,
+			expected: []Token{
+				{Pos: Pos{Line: 1, Column: 1}, Type: TokenIdentifier, Value: []byte("schema")},
+				{Pos: Pos{Line: 1, Column: 8}, Type: TokenIdentifier, Value: []byte("int")},
+				{Pos: Pos{Line: 1, Column: 11}, Type: TokenSymbol, Value: []byte(";")},
+				{Pos: Pos{Line: 2, Column: 1}, Type: TokenIdentifier, Value: []byte("record")},
+				{Pos: Pos{Line: 2, Column: 8}, Type: TokenIdentifier, Value: []byte("Counter")},
+				{Pos: Pos{Line: 2, Column: 16}, Type: TokenSymbol, Value: []byte("{")},
+				{Pos: Pos{Line: 3, Column: 3}, Type: TokenIdentifier, Value: []byte("int")},
+				{Pos: Pos{Line: 3, Column: 7}, Type: TokenIdentifier, Value: []byte("count")},
+				{Pos: Pos{Line: 3, Column: 13}, Type: TokenSymbol, Value: []byte("=")},
+				{Pos: Pos{Line: 3, Column: 15}, Type: TokenNumber, Value: []byte("42")},
+				{Pos: Pos{Line: 3, Column: 17}, Type: TokenSymbol, Value: []byte(";")},
+				{Pos: Pos{Line: 4, Column: 1}, Type: TokenSymbol, Value: []byte("}")},
 			},
 		},
 		{
