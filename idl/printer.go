@@ -137,6 +137,8 @@ func printType(t Type, next printerAction) printerAction {
 			return printEnum(typ, next)
 		case *Fixed:
 			return printFixed(typ, next)
+		case *Record:
+			return printRecord(typ, next)
 		case *Union:
 			return printUnion(typ, next)
 		case *Map:
@@ -234,6 +236,110 @@ func printFixed(f *Fixed, next printerAction) printerAction {
 func printFixedKeywordNameAndSize(name string, size int, next printerAction) printerAction {
 	return func(pr *printer, f *File) printerAction {
 		pr.writef("fixed %s(%d);\n", name, size)
+		return next
+	}
+}
+
+// printRecord prints a record type definition.
+func printRecord(r *Record, next printerAction) printerAction {
+	return printDoc(r.Doc,
+		printNamespaceAnnotation(r.Namespace,
+			printAliasesAnnotation(r.Aliases,
+				printProperties(r.Properties,
+					printRecordKeywordAndName(r.Name,
+						printFields(r.Fields, 0, next))))))
+}
+
+// printRecordKeywordAndName prints "record Name {\n".
+func printRecordKeywordAndName(name string, next printerAction) printerAction {
+	return func(pr *printer, f *File) printerAction {
+		pr.writef("record %s {\n", name)
+		return next
+	}
+}
+
+// printFields prints record fields, then closes with "}\n".
+func printFields(fields []*Field, idx int, next printerAction) printerAction {
+	return func(pr *printer, f *File) printerAction {
+		if idx >= len(fields) {
+			pr.write("}\n")
+			return next
+		}
+		return printField(fields[idx], printFields(fields, idx+1, next))
+	}
+}
+
+// printField prints a single record field with indentation.
+func printField(field *Field, next printerAction) printerAction {
+	return printFieldDoc(field.Doc,
+		printFieldAliases(field.Aliases,
+			printFieldType(field.Type,
+				printFieldOrder(field.SortOrder,
+					printFieldNameAndDefault(field.Name, field.Default, next)))))
+}
+
+// printFieldDoc prints field doc comment with indentation.
+func printFieldDoc(doc string, next printerAction) printerAction {
+	if doc == "" {
+		return next
+	}
+	return func(pr *printer, f *File) printerAction {
+		pr.writef("  /** %s */\n", doc)
+		return next
+	}
+}
+
+// printFieldAliases prints @aliases annotation for a field.
+func printFieldAliases(aliases []string, next printerAction) printerAction {
+	if len(aliases) == 0 {
+		return next
+	}
+	return func(pr *printer, f *File) printerAction {
+		pr.write("  @aliases([")
+		for i, alias := range aliases {
+			if i > 0 {
+				pr.write(", ")
+			}
+			pr.writef("\"%s\"", alias)
+		}
+		pr.write("])\n")
+		return next
+	}
+}
+
+// printFieldType prints the field type with indentation.
+func printFieldType(t Type, next printerAction) printerAction {
+	return func(pr *printer, f *File) printerAction {
+		pr.write("  ")
+		return printType(t, next)
+	}
+}
+
+// printFieldOrder prints @order annotation if not default (ascending).
+func printFieldOrder(order SortOrder, next printerAction) printerAction {
+	if order == SortOrderAsc {
+		return next
+	}
+	return func(pr *printer, f *File) printerAction {
+		switch order {
+		case SortOrderDesc:
+			pr.write(" @order(\"descending\")")
+		case SortOrderIgnore:
+			pr.write(" @order(\"ignore\")")
+		}
+		return next
+	}
+}
+
+// printFieldNameAndDefault prints " name" and optional " = default", then ";\n".
+func printFieldNameAndDefault(name string, def Value, next printerAction) printerAction {
+	return func(pr *printer, f *File) printerAction {
+		pr.writef(" %s", name)
+		if def != nil {
+			pr.write(" = ")
+			printValue(pr, def)
+		}
+		pr.write(";\n")
 		return next
 	}
 }
