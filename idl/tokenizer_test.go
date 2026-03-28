@@ -44,6 +44,30 @@ func TestTokenizerErrors(t *testing.T) {
 				Pos: Pos{Line: 1, Column: 1},
 			},
 		},
+		{
+			name: "bare minus sign",
+			src:  `- x`,
+			expectedErr: InvalidNumberError{
+				Pos:   Pos{Line: 1, Column: 1},
+				Value: "-",
+			},
+		},
+		{
+			name: "trailing dot on number",
+			src:  `3. `,
+			expectedErr: InvalidNumberError{
+				Pos:   Pos{Line: 1, Column: 1},
+				Value: "3.",
+			},
+		},
+		{
+			name: "minus dot without digits",
+			src:  `-.5`,
+			expectedErr: InvalidNumberError{
+				Pos:   Pos{Line: 1, Column: 1},
+				Value: "-.5",
+			},
+		},
 	}
 
 	for _, tc := range testCases {

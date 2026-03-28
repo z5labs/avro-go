@@ -224,6 +224,17 @@ func (e UnterminatedStringError) Error() string {
 	return fmt.Sprintf("unterminated string literal at line %d, column %d", e.Pos.Line, e.Pos.Column)
 }
 
+// InvalidNumberError is the error returned by the tokenizer when it encounters an invalid number literal.
+type InvalidNumberError struct {
+	Pos   Pos
+	Value string
+}
+
+// Error implements the [error] interface.
+func (e InvalidNumberError) Error() string {
+	return fmt.Sprintf("invalid number literal %q at line %d, column %d", e.Value, e.Pos.Line, e.Pos.Column)
+}
+
 func tokenizeIDL(t *tokenizer, yield func(Token, error) bool) tokenizerAction {
 	return skipWhitespace(
 		func(t *tokenizer, yield func(Token, error) bool) tokenizerAction {
@@ -362,6 +373,22 @@ func tokenizeNumber(t *tokenizer, yield func(Token, error) bool) tokenizerAction
 		}
 		return unicode.IsDigit(r)
 	})
+
+	if err == nil || errors.Is(err, io.ErrUnexpectedEOF) {
+		s := num.String()
+		valid := true
+		switch {
+		case s == "-" || s == ".":
+			valid = false
+		case len(s) > 1 && s[len(s)-1] == '.':
+			valid = false
+		case len(s) > 1 && s[0] == '-' && s[1] == '.':
+			valid = false
+		}
+		if !valid {
+			return yieldErrorOr(InvalidNumberError{Pos: pos, Value: s}, nil)
+		}
+	}
 
 	tok := Token{Pos: pos, Type: TokenNumber, Value: num.Bytes()}
 	if errors.Is(err, io.ErrUnexpectedEOF) {
