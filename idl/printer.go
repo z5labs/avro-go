@@ -135,6 +135,8 @@ func printType(t Type, next printerAction) printerAction {
 			pr.write(typ.Value)
 		case *Enum:
 			return printEnum(typ, next)
+		case *Fixed:
+			return printFixed(typ, next)
 		case *Union:
 			return printUnion(typ, next)
 		case *Map:
@@ -217,6 +219,23 @@ func printEnum(e *Enum, next printerAction) printerAction {
 					printEnumKeywordAndName(e.Name,
 						printEnumValues(e.Values, 0,
 							printEnumDefault(e.Default, next)))))))
+}
+
+// printFixed prints a fixed type definition.
+func printFixed(f *Fixed, next printerAction) printerAction {
+	return printDoc(f.Doc,
+		printNamespaceAnnotation(f.Namespace,
+			printAliasesAnnotation(f.Aliases,
+				printProperties(f.Properties,
+					printFixedKeywordNameAndSize(f.Name, f.Size, next)))))
+}
+
+// printFixedKeywordNameAndSize prints "fixed Name(size);\n".
+func printFixedKeywordNameAndSize(name string, size int, next printerAction) printerAction {
+	return func(pr *printer, f *File) printerAction {
+		pr.writef("fixed %s(%d);\n", name, size)
+		return next
+	}
 }
 
 // printDoc prints a doc comment if non-empty.
