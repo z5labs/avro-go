@@ -139,7 +139,12 @@ schema int;`,
 				},
 			},
 			expected: `schema int;
-enum Suit { HEARTS, DIAMONDS, CLUBS, SPADES }
+enum Suit {
+  HEARTS,
+  DIAMONDS,
+  CLUBS,
+  SPADES
+}
 `,
 		},
 		{
@@ -161,7 +166,10 @@ enum Suit { HEARTS, DIAMONDS, CLUBS, SPADES }
 				},
 			},
 			expected: `schema int;
-enum Suit { HEARTS, DIAMONDS } = HEARTS;
+enum Suit {
+  HEARTS,
+  DIAMONDS
+} = HEARTS;
 `,
 		},
 		{
@@ -184,7 +192,10 @@ enum Suit { HEARTS, DIAMONDS } = HEARTS;
 			},
 			expected: `schema int;
 /** Card suits */
-enum Suit { HEARTS, DIAMONDS }
+enum Suit {
+  HEARTS,
+  DIAMONDS
+}
 `,
 		},
 		{
@@ -206,7 +217,9 @@ enum Suit { HEARTS, DIAMONDS }
 			},
 			expected: `schema int;
 @namespace("com.example.cards")
-enum Suit { HEARTS }
+enum Suit {
+  HEARTS
+}
 `,
 		},
 		{
@@ -228,7 +241,9 @@ enum Suit { HEARTS }
 			},
 			expected: `schema int;
 @aliases(["OldSuit", "AncientSuit"])
-enum Suit { HEARTS }
+enum Suit {
+  HEARTS
+}
 `,
 		},
 		{
@@ -252,7 +267,9 @@ enum Suit { HEARTS }
 			},
 			expected: `schema int;
 @custom("value")
-enum Suit { HEARTS }
+enum Suit {
+  HEARTS
+}
 `,
 		},
 		{
@@ -280,7 +297,10 @@ enum Suit { HEARTS }
 /** Card suits */
 @namespace("com.example")
 @aliases(["OldSuit"])
-enum Suit { HEARTS, DIAMONDS } = HEARTS;
+enum Suit {
+  HEARTS,
+  DIAMONDS
+} = HEARTS;
 `,
 		},
 	}
@@ -346,13 +366,21 @@ schema int;`,
 		{
 			name: "basic enum",
 			src: `schema int;
-enum Suit { HEARTS, DIAMONDS, CLUBS, SPADES }
+enum Suit {
+  HEARTS,
+  DIAMONDS,
+  CLUBS,
+  SPADES
+}
 `,
 		},
 		{
 			name: "enum with default",
 			src: `schema int;
-enum Suit { HEARTS, DIAMONDS } = HEARTS;
+enum Suit {
+  HEARTS,
+  DIAMONDS
+} = HEARTS;
 `,
 		},
 	}

@@ -255,20 +255,21 @@ func printEnumKeywordAndName(name string, next printerAction) printerAction {
 	}
 }
 
-// printEnumValues prints the enum values: { VALUE1, VALUE2, ... }
+// printEnumValues prints the enum values, each on its own line.
 func printEnumValues(values []*Ident, idx int, next printerAction) printerAction {
 	return func(pr *printer, f *File) printerAction {
 		if idx == 0 {
-			pr.write("{ ")
+			pr.write("{\n")
 		}
 		if idx >= len(values) {
-			pr.write(" }")
+			pr.write("}")
 			return next
 		}
-		if idx > 0 {
-			pr.write(", ")
+		pr.writef("  %s", values[idx].Value)
+		if idx < len(values)-1 {
+			pr.write(",")
 		}
-		pr.write(values[idx].Value)
+		pr.write("\n")
 		return printEnumValues(values, idx+1, next)
 	}
 }
