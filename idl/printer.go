@@ -8,6 +8,7 @@ package idl
 import (
 	"fmt"
 	"io"
+	"slices"
 )
 
 // Print the given File to the given writer in Avro IDL format.
@@ -116,7 +117,9 @@ func printSchemaTypes(idx int) printerAction {
 		if idx >= len(f.Schema.Types) {
 			return nil
 		}
-		pr.write("\n")
+		if idx == 0 {
+			pr.write("\n")
+		}
 		return printType(f.Schema.Types[idx], printSchemaTypes(idx+1))
 	}
 }
@@ -191,15 +194,20 @@ func printAliasesAnnotation(aliases []string, next printerAction) printerAction 
 	}
 }
 
-// printProperties prints custom @property annotations.
+// printProperties prints custom @property annotations in sorted key order.
 func printProperties(props map[string]Value, next printerAction) printerAction {
 	if len(props) == 0 {
 		return next
 	}
 	return func(pr *printer, f *File) printerAction {
-		for name, val := range props {
+		keys := make([]string, 0, len(props))
+		for name := range props {
+			keys = append(keys, name)
+		}
+		slices.Sort(keys)
+		for _, name := range keys {
 			pr.writef("@%s(", name)
-			printValue(pr, val)
+			printValue(pr, props[name])
 			pr.write(")\n")
 		}
 		return next
@@ -208,6 +216,10 @@ func printProperties(props map[string]Value, next printerAction) printerAction {
 
 // printValue prints a Value (used in annotations and defaults).
 func printValue(pr *printer, v Value) {
+	if v == nil {
+		pr.err = fmt.Errorf("idl: cannot print nil Value")
+		return
+	}
 	switch val := v.(type) {
 	case NullValue:
 		pr.write("null")
@@ -234,16 +246,21 @@ func printValue(pr *printer, v Value) {
 		pr.write("]")
 	case ObjectValue:
 		pr.write("{")
-		first := true
-		for k, v := range val {
-			if !first {
+		keys := make([]string, 0, len(val))
+		for k := range val {
+			keys = append(keys, k)
+		}
+		slices.Sort(keys)
+		for i, k := range keys {
+			if i > 0 {
 				pr.write(", ")
 			}
-			first = false
 			pr.writef("\"%s\": ", k)
-			printValue(pr, v)
+			printValue(pr, val[k])
 		}
 		pr.write("}")
+	default:
+		pr.err = fmt.Errorf("idl: unsupported Value type %T in printer", v)
 	}
 }
 

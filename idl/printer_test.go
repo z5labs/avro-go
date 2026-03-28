@@ -383,6 +383,18 @@ enum Suit {
 } = HEARTS;
 `,
 		},
+		{
+			name: "enum with all annotations",
+			src: `schema int;
+/** Card suits */
+@namespace("com.example")
+@aliases(["OldSuit", "AncientSuit"])
+enum Suit {
+  HEARTS,
+  DIAMONDS
+} = HEARTS;
+`,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -424,7 +436,10 @@ enum Suit {
 				case *Enum:
 					typ2, ok := file2.Schema.Types[i].(*Enum)
 					require.True(t, ok, "expected *Enum at index %d", i)
+					require.Equal(t, typ1.Doc, typ2.Doc)
 					require.Equal(t, typ1.Name, typ2.Name)
+					require.Equal(t, typ1.Namespace, typ2.Namespace)
+					require.Equal(t, typ1.Aliases, typ2.Aliases)
 					require.Equal(t, len(typ1.Values), len(typ2.Values))
 					for j := range typ1.Values {
 						require.Equal(t, typ1.Values[j].Value, typ2.Values[j].Value)
@@ -434,6 +449,10 @@ enum Suit {
 						require.Equal(t, typ1.Default.Value, typ2.Default.Value)
 					} else {
 						require.Nil(t, typ2.Default)
+					}
+					require.Equal(t, len(typ1.Properties), len(typ2.Properties))
+					for k, v := range typ1.Properties {
+						require.Equal(t, v, typ2.Properties[k])
 					}
 				}
 			}
