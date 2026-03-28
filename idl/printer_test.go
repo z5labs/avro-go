@@ -119,6 +119,190 @@ schema int;`,
 // header comment
 schema int;`,
 		},
+		{
+			name: "basic enum with values",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Enum{
+							Name: "Suit",
+							Values: []*Ident{
+								{Value: "HEARTS"},
+								{Value: "DIAMONDS"},
+								{Value: "CLUBS"},
+								{Value: "SPADES"},
+							},
+						},
+					},
+				},
+			},
+			expected: `schema int;
+enum Suit {
+  HEARTS,
+  DIAMONDS,
+  CLUBS,
+  SPADES
+}
+`,
+		},
+		{
+			name: "enum with default",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Enum{
+							Name: "Suit",
+							Values: []*Ident{
+								{Value: "HEARTS"},
+								{Value: "DIAMONDS"},
+							},
+							Default: &Ident{Value: "HEARTS"},
+						},
+					},
+				},
+			},
+			expected: `schema int;
+enum Suit {
+  HEARTS,
+  DIAMONDS
+} = HEARTS;
+`,
+		},
+		{
+			name: "enum with doc comment",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Enum{
+							Doc:  "Card suits",
+							Name: "Suit",
+							Values: []*Ident{
+								{Value: "HEARTS"},
+								{Value: "DIAMONDS"},
+							},
+						},
+					},
+				},
+			},
+			expected: `schema int;
+/** Card suits */
+enum Suit {
+  HEARTS,
+  DIAMONDS
+}
+`,
+		},
+		{
+			name: "enum with namespace annotation",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Enum{
+							Name:      "Suit",
+							Namespace: "com.example.cards",
+							Values: []*Ident{
+								{Value: "HEARTS"},
+							},
+						},
+					},
+				},
+			},
+			expected: `schema int;
+@namespace("com.example.cards")
+enum Suit {
+  HEARTS
+}
+`,
+		},
+		{
+			name: "enum with aliases annotation",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Enum{
+							Name:    "Suit",
+							Aliases: []string{"OldSuit", "AncientSuit"},
+							Values: []*Ident{
+								{Value: "HEARTS"},
+							},
+						},
+					},
+				},
+			},
+			expected: `schema int;
+@aliases(["OldSuit", "AncientSuit"])
+enum Suit {
+  HEARTS
+}
+`,
+		},
+		{
+			name: "enum with custom property",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Enum{
+							Name: "Suit",
+							Properties: map[string]Value{
+								"custom": StringValue("value"),
+							},
+							Values: []*Ident{
+								{Value: "HEARTS"},
+							},
+						},
+					},
+				},
+			},
+			expected: `schema int;
+@custom("value")
+enum Suit {
+  HEARTS
+}
+`,
+		},
+		{
+			name: "enum with all annotations",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Enum{
+							Doc:       "Card suits",
+							Name:      "Suit",
+							Namespace: "com.example",
+							Aliases:   []string{"OldSuit"},
+							Values: []*Ident{
+								{Value: "HEARTS"},
+								{Value: "DIAMONDS"},
+							},
+							Default: &Ident{Value: "HEARTS"},
+						},
+					},
+				},
+			},
+			expected: `schema int;
+/** Card suits */
+@namespace("com.example")
+@aliases(["OldSuit"])
+enum Suit {
+  HEARTS,
+  DIAMONDS
+} = HEARTS;
+`,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -179,6 +363,38 @@ schema int;`,
 namespace com.example;
 schema int;`,
 		},
+		{
+			name: "basic enum",
+			src: `schema int;
+enum Suit {
+  HEARTS,
+  DIAMONDS,
+  CLUBS,
+  SPADES
+}
+`,
+		},
+		{
+			name: "enum with default",
+			src: `schema int;
+enum Suit {
+  HEARTS,
+  DIAMONDS
+} = HEARTS;
+`,
+		},
+		{
+			name: "enum with all annotations",
+			src: `schema int;
+/** Card suits */
+@namespace("com.example")
+@aliases(["OldSuit", "AncientSuit"])
+enum Suit {
+  HEARTS,
+  DIAMONDS
+} = HEARTS;
+`,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -211,6 +427,34 @@ schema int;`,
 				t2, ok := file2.Schema.Type.(Ident)
 				require.True(t, ok)
 				require.Equal(t, t1.Value, t2.Value)
+			}
+
+			// Compare Schema.Types (e.g., enums, records)
+			require.Equal(t, len(file1.Schema.Types), len(file2.Schema.Types))
+			for i := range file1.Schema.Types {
+				switch typ1 := file1.Schema.Types[i].(type) {
+				case *Enum:
+					typ2, ok := file2.Schema.Types[i].(*Enum)
+					require.True(t, ok, "expected *Enum at index %d", i)
+					require.Equal(t, typ1.Doc, typ2.Doc)
+					require.Equal(t, typ1.Name, typ2.Name)
+					require.Equal(t, typ1.Namespace, typ2.Namespace)
+					require.Equal(t, typ1.Aliases, typ2.Aliases)
+					require.Equal(t, len(typ1.Values), len(typ2.Values))
+					for j := range typ1.Values {
+						require.Equal(t, typ1.Values[j].Value, typ2.Values[j].Value)
+					}
+					if typ1.Default != nil {
+						require.NotNil(t, typ2.Default)
+						require.Equal(t, typ1.Default.Value, typ2.Default.Value)
+					} else {
+						require.Nil(t, typ2.Default)
+					}
+					require.Equal(t, len(typ1.Properties), len(typ2.Properties))
+					for k, v := range typ1.Properties {
+						require.Equal(t, v, typ2.Properties[k])
+					}
+				}
 			}
 		})
 	}
