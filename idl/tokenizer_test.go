@@ -460,6 +460,13 @@ record Employee {
 				{Pos: Pos{Line: 1, Column: 1}, Type: TokenDocComment, Value: []byte("/***/")},
 			},
 		},
+		{
+			name: "empty comment not doc comment",
+			src:  `/**/`,
+			expected: []Token{
+				{Pos: Pos{Line: 1, Column: 1}, Type: TokenComment, Value: []byte("/**/")},
+			},
+		},
 	}
 
 	for _, tc := range testCases {
