@@ -103,6 +103,22 @@ schema int;`,
 */
 schema int;`,
 		},
+		{
+			name: "comment before namespace declaration",
+			input: &File{
+				Comments: []*Comment{
+					{Pos: Pos{Line: 1, Column: 1}, Text: "// header comment"},
+				},
+				Schema: &Schema{
+					Pos:       Pos{Line: 3, Column: 1},
+					Namespace: "com.example",
+					Type:      Ident{Pos: Pos{Line: 3, Column: 8}, Value: "int"},
+				},
+			},
+			expected: `namespace com.example;
+// header comment
+schema int;`,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -155,6 +171,12 @@ schema int;`,
 			src: `/*
 * This is a comment
 */
+schema int;`,
+		},
+		{
+			name: "comment before namespace declaration",
+			src: `// header comment
+namespace com.example;
 schema int;`,
 		},
 	}
