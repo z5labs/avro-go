@@ -493,38 +493,68 @@ func parseType(p *parser, schema *Schema) (_ parserAction[*Schema], err error) {
 		return nil, err
 	}
 
-	switch tok.Type {
-	case TokenIdentifier:
-		switch string(tok.Value) {
-		case "enum":
-			enum, err := parseEnum(p)
-			if err != nil {
-				return nil, err
+	return dispatchType(tok), nil
+}
+
+func dispatchType(tok Token) parserAction[*Schema] {
+	return func(p *parser, schema *Schema) (_ parserAction[*Schema], err error) {
+		switch tok.Type {
+		case TokenIdentifier:
+			switch string(tok.Value) {
+			case "enum":
+				enum, err := parseEnum(p)
+				if err != nil {
+					return nil, err
+				}
+				schema.Types = append(schema.Types, enum)
+				return parseEnumOptionalDefault(enum), nil
+			case "fixed":
+				fixed, err := parseFixed(p)
+				if err != nil {
+					return nil, err
+				}
+				schema.Types = append(schema.Types, fixed)
+				return parseType, nil
+			case "record":
+				rec, err := parseRecord(p)
+				if err != nil {
+					return nil, err
+				}
+				schema.Types = append(schema.Types, rec)
+				return parseType, nil
+			default:
+				return nil, errors.New("unknown type keyword: " + string(tok.Value))
 			}
-			schema.Types = append(schema.Types, enum)
-			return parseType, nil
-		case "fixed":
-			fixed, err := parseFixed(p)
-			if err != nil {
-				return nil, err
-			}
-			schema.Types = append(schema.Types, fixed)
-			return parseType, nil
-		case "record":
-			rec, err := parseRecord(p)
-			if err != nil {
-				return nil, err
-			}
-			schema.Types = append(schema.Types, rec)
-			return parseType, nil
 		default:
-			return nil, errors.New("unknown type keyword: " + string(tok.Value))
+			return nil, UnexpectedTokenError{
+				Expected: []TokenType{TokenIdentifier},
+				Actual:   tok,
+			}
 		}
-	default:
-		return nil, UnexpectedTokenError{
-			Expected: []TokenType{TokenIdentifier},
-			Actual:   tok,
+	}
+}
+
+func parseEnumOptionalDefault(enum *Enum) parserAction[*Schema] {
+	return func(p *parser, schema *Schema) (parserAction[*Schema], error) {
+		tok, err, ok := p.next()
+		if !ok {
+			return nil, nil
 		}
+		if err != nil {
+			return nil, err
+		}
+		if tok.Type == TokenSymbol && bytes.Equal(tok.Value, []byte("=")) {
+			defTok, err := p.expect(TokenIdentifier)
+			if err != nil {
+				return nil, err
+			}
+			enum.Default = &Ident{
+				Pos:   defTok.Pos,
+				Value: string(defTok.Value),
+			}
+			return parseSemicolon(parseType), nil
+		}
+		return dispatchType(tok), nil
 	}
 }
 
@@ -581,7 +611,7 @@ func parseEnumValueSep(p *parser, enum *Enum) (parserAction[*Enum], error) {
 	case bytes.Equal(tok.Value, []byte(",")):
 		return parseEnumValueOrClose, nil
 	case bytes.Equal(tok.Value, []byte("}")):
-		return parseEnumDefaultOrSemicolon, nil
+		return nil, nil
 	default:
 		return nil, UnexpectedTokenError{
 			Expected: []TokenType{TokenSymbol},
@@ -609,43 +639,13 @@ func parseEnumValueOrClose(p *parser, enum *Enum) (parserAction[*Enum], error) {
 				Actual:   tok,
 			}
 		}
-		return parseEnumDefaultOrSemicolon, nil
+		return nil, nil
 	default:
 		return nil, UnexpectedTokenError{
 			Expected: []TokenType{TokenIdentifier, TokenSymbol},
 			Actual:   tok,
 		}
 	}
-}
-
-func parseEnumDefaultOrSemicolon(p *parser, enum *Enum) (parserAction[*Enum], error) {
-	tok, err := p.expect(TokenSymbol)
-	if err != nil {
-		return nil, err
-	}
-	switch {
-	case bytes.Equal(tok.Value, []byte("=")):
-		return parseEnumDefault, nil
-	case bytes.Equal(tok.Value, []byte(";")):
-		return nil, nil
-	default:
-		return nil, UnexpectedTokenError{
-			Expected: []TokenType{TokenSymbol},
-			Actual:   tok,
-		}
-	}
-}
-
-func parseEnumDefault(p *parser, enum *Enum) (parserAction[*Enum], error) {
-	tok, err := p.expect(TokenIdentifier)
-	if err != nil {
-		return nil, err
-	}
-	enum.Default = &Ident{
-		Pos:   tok.Pos,
-		Value: string(tok.Value),
-	}
-	return parseSemicolon[*Enum](nil), nil
 }
 
 func parseFixed(p *parser) (fixed *Fixed, err error) {

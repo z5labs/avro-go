@@ -86,12 +86,6 @@ enum Suit { HEARTS ;`,
 			},
 		},
 		{
-			name: "enum missing semicolon",
-			src: `schema int;
-enum Suit { HEARTS }`,
-			expectedErr: UnexpectedEndOfTokensError{Expected: []TokenType{TokenSymbol}},
-		},
-		{
 			name: "enum empty body",
 			src: `schema int;
 enum Suit { };`,
@@ -103,10 +97,9 @@ enum Suit { };`,
 		{
 			name: "enum default missing identifier",
 			src: `schema int;
-enum Suit { HEARTS } = ;`,
-			expectedErr: UnexpectedTokenError{
+enum Suit { HEARTS } =`,
+			expectedErr: UnexpectedEndOfTokensError{
 				Expected: []TokenType{TokenIdentifier},
-				Actual:   Token{Pos: Pos{Line: 2, Column: 24}, Type: TokenSymbol, Value: []byte(";")},
 			},
 		},
 		{
@@ -379,7 +372,7 @@ schema int;`,
 		{
 			name: "schema with single enum type",
 			src: `schema int;
-enum Suit { HEARTS, DIAMONDS, CLUBS, SPADES };`,
+enum Suit { HEARTS, DIAMONDS, CLUBS, SPADES }`,
 			expected: &File{
 				Schema: &Schema{
 					Pos:  Pos{Line: 1, Column: 1},
@@ -420,9 +413,38 @@ enum Suit { HEARTS, DIAMONDS } = HEARTS;`,
 			},
 		},
 		{
+			name: "schema with enum type and default followed by another type",
+			src: `schema int;
+enum Suit { HEARTS, DIAMONDS } = HEARTS;
+enum Color { RED, BLACK }`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Enum{
+							Name: "Suit",
+							Values: []*Ident{
+								{Pos: Pos{Line: 2, Column: 13}, Value: "HEARTS"},
+								{Pos: Pos{Line: 2, Column: 21}, Value: "DIAMONDS"},
+							},
+							Default: &Ident{Pos: Pos{Line: 2, Column: 34}, Value: "HEARTS"},
+						},
+						&Enum{
+							Name: "Color",
+							Values: []*Ident{
+								{Pos: Pos{Line: 3, Column: 14}, Value: "RED"},
+								{Pos: Pos{Line: 3, Column: 19}, Value: "BLACK"},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "schema with enum type trailing comma",
 			src: `schema int;
-enum Suit { HEARTS, DIAMONDS, };`,
+enum Suit { HEARTS, DIAMONDS, }`,
 			expected: &File{
 				Schema: &Schema{
 					Pos:  Pos{Line: 1, Column: 1},
@@ -442,7 +464,7 @@ enum Suit { HEARTS, DIAMONDS, };`,
 		{
 			name: "schema with enum type single value",
 			src: `schema int;
-enum Suit { HEARTS };`,
+enum Suit { HEARTS }`,
 			expected: &File{
 				Schema: &Schema{
 					Pos:  Pos{Line: 1, Column: 1},
@@ -461,8 +483,8 @@ enum Suit { HEARTS };`,
 		{
 			name: "schema with multiple enum types",
 			src: `schema int;
-enum Suit { HEARTS };
-enum Color { RED, BLACK };`,
+enum Suit { HEARTS }
+enum Color { RED, BLACK }`,
 			expected: &File{
 				Schema: &Schema{
 					Pos:  Pos{Line: 1, Column: 1},
@@ -527,7 +549,7 @@ fixed SHA256(32);`,
 		{
 			name: "schema with enum and fixed types",
 			src: `schema int;
-enum Suit { HEARTS };
+enum Suit { HEARTS }
 fixed MD5(16);`,
 			expected: &File{
 				Schema: &Schema{
@@ -577,7 +599,7 @@ schema map<string>;`,
 		{
 			name: "map schema with enum type",
 			src: `schema map<Suit>;
-enum Suit { HEARTS, DIAMONDS };`,
+enum Suit { HEARTS, DIAMONDS }`,
 			expected: &File{
 				Schema: &Schema{
 					Pos: Pos{Line: 1, Column: 1},
@@ -660,7 +682,7 @@ schema union { null, int };`,
 		{
 			name: "union schema with enum type",
 			src: `schema union { null, Suit };
-enum Suit { HEARTS, DIAMONDS };`,
+enum Suit { HEARTS, DIAMONDS }`,
 			expected: &File{
 				Schema: &Schema{
 					Pos: Pos{Line: 1, Column: 1},
@@ -895,7 +917,7 @@ record Department {
 		{
 			name: "schema with record and enum types",
 			src: `schema int;
-enum Status { ACTIVE, INACTIVE };
+enum Status { ACTIVE, INACTIVE }
 record Employee {
   string name;
 };`,
