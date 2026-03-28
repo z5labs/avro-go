@@ -1758,3 +1758,225 @@ record Employee {
 		})
 	}
 }
+
+func TestParserEscapedIdentifiers(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		src      string
+		expected *File
+	}{
+		{
+			name: "escaped record name",
+			src: `schema int;
+record ` + "`schema`" + ` {
+	string name;
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "schema",
+							Fields: []*Field{
+								{Name: "name", Type: Ident{Pos: Pos{Line: 3, Column: 2}, Value: "string"}},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "escaped enum name",
+			src: `schema int;
+enum ` + "`error`" + ` { VALUE }`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Enum{
+							Name: "error",
+							Values: []*Ident{
+								{Pos: Pos{Line: 2, Column: 16}, Value: "VALUE"},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "escaped fixed name",
+			src:  "schema int;\nfixed `null`(16);",
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Fixed{
+							Name: "null",
+							Size: 16,
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "escaped field name",
+			src: `schema int;
+record Employee {
+	string ` + "`namespace`" + `;
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Employee",
+							Fields: []*Field{
+								{Name: "namespace", Type: Ident{Pos: Pos{Line: 3, Column: 2}, Value: "string"}},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "escaped enum value",
+			src:  "schema int;\nenum Color { `null`, RED }",
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Enum{
+							Name: "Color",
+							Values: []*Ident{
+								{Pos: Pos{Line: 2, Column: 14}, Value: "null"},
+								{Pos: Pos{Line: 2, Column: 22}, Value: "RED"},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "escaped type reference in record field",
+			src: `schema int;
+record Employee {
+	` + "`schema`" + ` data;
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Employee",
+							Fields: []*Field{
+								{Name: "data", Type: Ident{Pos: Pos{Line: 3, Column: 2}, Value: "schema"}},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "escaped type in union",
+			src:  "schema union { `null`, `map` };",
+			expected: &File{
+				Schema: &Schema{
+					Pos: Pos{Line: 1, Column: 1},
+					Type: &Union{
+						Types: []Type{
+							Ident{Pos: Pos{Line: 1, Column: 16}, Value: "null"},
+							Ident{Pos: Pos{Line: 1, Column: 24}, Value: "map"},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "escaped type in map",
+			src:  "schema map<`union`>;",
+			expected: &File{
+				Schema: &Schema{
+					Pos: Pos{Line: 1, Column: 1},
+					Type: &Map{
+						Values: &Ident{Pos: Pos{Line: 1, Column: 12}, Value: "union"},
+					},
+				},
+			},
+		},
+		{
+			name: "escaped enum default value",
+			src:  "schema int;\nenum Status { `null`, ACTIVE } = `null`;",
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Enum{
+							Name: "Status",
+							Values: []*Ident{
+								{Pos: Pos{Line: 2, Column: 15}, Value: "null"},
+								{Pos: Pos{Line: 2, Column: 23}, Value: "ACTIVE"},
+							},
+							Default: &Ident{Pos: Pos{Line: 2, Column: 34}, Value: "null"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			file, err := Parse(strings.NewReader(tc.src))
+
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, file)
+		})
+	}
+}
+
+func TestParserEscapedIdentifierErrors(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name        string
+		src         string
+		expectedErr error
+	}{
+		{
+			name:        "unterminated escaped identifier in record name",
+			src:         "schema int;\nrecord `schema { string name; }",
+			expectedErr: UnterminatedEscapedIdentifierError{Pos: Pos{Line: 2, Column: 8}},
+		},
+		{
+			name:        "unterminated escaped identifier in enum value",
+			src:         "schema int;\nenum Color { `null }",
+			expectedErr: UnterminatedEscapedIdentifierError{Pos: Pos{Line: 2, Column: 14}},
+		},
+		{
+			name:        "tokenizer error inside escaped identifier is preserved",
+			src:         "schema int;\nrecord `name$ { }",
+			expectedErr: UnexpectedCharacterError{Pos: Pos{Line: 2, Column: 14}, R: '$'},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := Parse(strings.NewReader(tc.src))
+
+			require.Equal(t, tc.expectedErr, err)
+		})
+	}
+}
