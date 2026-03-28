@@ -273,9 +273,10 @@ func printFields(fields []*Field, idx int, next printerAction) printerAction {
 func printField(field *Field, next printerAction) printerAction {
 	return printFieldDoc(field.Doc,
 		printFieldAliases(field.Aliases,
-			printFieldType(field.Type,
-				printFieldOrder(field.SortOrder,
-					printFieldNameAndDefault(field.Name, field.Default, next)))))
+			printFieldProperties(field.Properties,
+				printFieldType(field.Type,
+					printFieldOrder(field.SortOrder,
+						printFieldNameAndDefault(field.Name, field.Default, next))))))
 }
 
 // printFieldDoc prints field doc comment with indentation.
@@ -303,6 +304,26 @@ func printFieldAliases(aliases []string, next printerAction) printerAction {
 			pr.writef("\"%s\"", alias)
 		}
 		pr.write("])\n")
+		return next
+	}
+}
+
+// printFieldProperties prints custom properties for a field with indentation.
+func printFieldProperties(props map[string]Value, next printerAction) printerAction {
+	if len(props) == 0 {
+		return next
+	}
+	return func(pr *printer, f *File) printerAction {
+		keys := make([]string, 0, len(props))
+		for name := range props {
+			keys = append(keys, name)
+		}
+		slices.Sort(keys)
+		for _, name := range keys {
+			pr.writef("  @%s(", name)
+			printValue(pr, props[name])
+			pr.write(")\n")
+		}
 		return next
 	}
 }

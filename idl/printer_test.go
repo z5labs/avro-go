@@ -1008,6 +1008,35 @@ record Person {
 }
 `,
 		},
+		{
+			name: "record with field custom properties",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Person",
+							Fields: []*Field{
+								{
+									Name: "name",
+									Type: Ident{Value: "string"},
+									Properties: map[string]Value{
+										"custom": StringValue("value"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: `schema int;
+record Person {
+  @custom("value")
+  string name;
+}
+`,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -1325,6 +1354,11 @@ record Person {
 						require.Equal(t, f1.Aliases, f2.Aliases)
 						require.Equal(t, f1.SortOrder, f2.SortOrder)
 						require.Equal(t, f1.Default, f2.Default)
+						require.Equal(t, f1.Type, f2.Type)
+						require.Equal(t, len(f1.Properties), len(f2.Properties))
+						for k, v := range f1.Properties {
+							require.Equal(t, v, f2.Properties[k])
+						}
 					}
 				}
 			}
