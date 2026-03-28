@@ -68,6 +68,20 @@ func TestTokenizerErrors(t *testing.T) {
 				Value: "-.5",
 			},
 		},
+		{
+			name: "annotation with empty name",
+			src:  `@(`,
+			expectedErr: InvalidAnnotationError{
+				Pos: Pos{Line: 1, Column: 1},
+			},
+		},
+		{
+			name: "annotation with space after at sign",
+			src:  `@ foo`,
+			expectedErr: InvalidAnnotationError{
+				Pos: Pos{Line: 1, Column: 1},
+			},
+		},
 	}
 
 	for _, tc := range testCases {
