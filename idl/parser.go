@@ -36,6 +36,7 @@ const (
 
 // Field represents a field in a record.
 type Field struct {
+	Doc        string
 	Name       string
 	Aliases    []string
 	Type       Type
@@ -99,6 +100,7 @@ type Type interface {
 
 // Record represents a record in the Avro IDL.
 type Record struct {
+	Doc        string
 	Name       string
 	Namespace  string
 	Aliases    []string
@@ -110,6 +112,7 @@ func (Record) idl() {}
 
 // Enum represents an enum in the Avro IDL.
 type Enum struct {
+	Doc        string
 	Name       string
 	Namespace  string
 	Aliases    []string
@@ -143,6 +146,7 @@ func (Union) idl() {}
 
 // Fixed represents a fixed in the Avro IDL.
 type Fixed struct {
+	Doc        string
 	Name       string
 	Namespace  string
 	Aliases    []string
@@ -279,6 +283,45 @@ func (p *parser) expect(expected ...TokenType) (Token, error) {
 }
 
 type parserAction[T any] func(p *parser, t T) (parserAction[T], error)
+
+func cleanDocComment(raw string) string {
+	// Strip /** prefix and */ suffix
+	s := strings.TrimPrefix(raw, "/**")
+	s = strings.TrimSuffix(s, "*/")
+
+	// Split into lines and clean each line
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		// Trim leading whitespace
+		line = strings.TrimLeft(line, " \t")
+		// Strip leading * if present
+		line = strings.TrimPrefix(line, "*")
+		// Trim a single leading space after * if present
+		if len(line) > 0 && line[0] == ' ' {
+			line = line[1:]
+		}
+		lines[i] = line
+	}
+
+	// Join and trim
+	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+func collectDocComment(p *parser) (string, error) {
+	tok, err, ok := p.peek()
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", nil
+	}
+	if tok.Type != TokenDocComment {
+		return "", nil
+	}
+	// Consume the peeked doc comment token
+	p.pending = nil
+	return cleanDocComment(string(tok.Value)), nil
+}
 
 func collectAnnotations(p *parser) ([]*Annotation, error) {
 	var annotations []*Annotation
@@ -427,7 +470,7 @@ func extractStringSlice(v Value) []string {
 }
 
 func parseFile(p *parser, file *File) (parserAction[*File], error) {
-	tok, err := p.expect(TokenIdentifier, TokenComment)
+	tok, err := p.expect(TokenIdentifier, TokenComment, TokenDocComment)
 	if err != nil {
 		return nil, err
 	}
@@ -452,7 +495,7 @@ func parseFile(p *parser, file *File) (parserAction[*File], error) {
 		default:
 			return nil, errors.New("schema idl must start with either 'schema' or 'namespace'")
 		}
-	case TokenComment:
+	case TokenComment, TokenDocComment:
 		file.Comments = append(file.Comments, &Comment{
 			Pos:  tok.Pos,
 			Text: string(tok.Value),
@@ -461,14 +504,14 @@ func parseFile(p *parser, file *File) (parserAction[*File], error) {
 		return parseFile, nil
 	default:
 		return nil, UnexpectedTokenError{
-			Expected: []TokenType{TokenIdentifier, TokenComment},
+			Expected: []TokenType{TokenIdentifier, TokenComment, TokenDocComment},
 			Actual:   tok,
 		}
 	}
 }
 
 func parseSchema(p *parser, file *File) (parserAction[*File], error) {
-	tok, err := p.expect(TokenIdentifier, TokenComment)
+	tok, err := p.expect(TokenIdentifier, TokenComment, TokenDocComment)
 	if err != nil {
 		return nil, err
 	}
@@ -485,7 +528,7 @@ func parseSchema(p *parser, file *File) (parserAction[*File], error) {
 		default:
 			return nil, errors.New("schema definition must follow namespace declaration")
 		}
-	case TokenComment:
+	case TokenComment, TokenDocComment:
 		file.Comments = append(file.Comments, &Comment{
 			Pos:  tok.Pos,
 			Text: string(tok.Value),
@@ -493,7 +536,7 @@ func parseSchema(p *parser, file *File) (parserAction[*File], error) {
 		return parseSchema, nil
 	default:
 		return nil, UnexpectedTokenError{
-			Expected: []TokenType{TokenIdentifier, TokenComment},
+			Expected: []TokenType{TokenIdentifier, TokenComment, TokenDocComment},
 			Actual:   tok,
 		}
 	}
@@ -707,6 +750,11 @@ func parseUnionMemberOrClose(p *parser, u *Union) (parserAction[*Union], error) 
 }
 
 func parseType(p *parser, schema *Schema) (_ parserAction[*Schema], err error) {
+	doc, err := collectDocComment(p)
+	if err != nil {
+		return nil, err
+	}
+
 	annotations, err := collectAnnotations(p)
 	if err != nil {
 		return nil, err
@@ -720,10 +768,10 @@ func parseType(p *parser, schema *Schema) (_ parserAction[*Schema], err error) {
 		return nil, err
 	}
 
-	return dispatchType(tok, annotations), nil
+	return dispatchType(tok, doc, annotations), nil
 }
 
-func dispatchType(tok Token, annotations []*Annotation) parserAction[*Schema] {
+func dispatchType(tok Token, doc string, annotations []*Annotation) parserAction[*Schema] {
 	return func(p *parser, schema *Schema) (_ parserAction[*Schema], err error) {
 		switch tok.Type {
 		case TokenIdentifier:
@@ -733,6 +781,7 @@ func dispatchType(tok Token, annotations []*Annotation) parserAction[*Schema] {
 				if err != nil {
 					return nil, err
 				}
+				enum.Doc = doc
 				applyAnnotationsToEnum(enum, annotations)
 				schema.Types = append(schema.Types, enum)
 				return parseEnumOptionalDefault(enum), nil
@@ -741,6 +790,7 @@ func dispatchType(tok Token, annotations []*Annotation) parserAction[*Schema] {
 				if err != nil {
 					return nil, err
 				}
+				fixed.Doc = doc
 				applyAnnotationsToFixed(fixed, annotations)
 				schema.Types = append(schema.Types, fixed)
 				return parseType, nil
@@ -749,6 +799,7 @@ func dispatchType(tok Token, annotations []*Annotation) parserAction[*Schema] {
 				if err != nil {
 					return nil, err
 				}
+				rec.Doc = doc
 				applyAnnotationsToRecord(rec, annotations)
 				schema.Types = append(schema.Types, rec)
 				return parseType, nil
@@ -785,7 +836,19 @@ func parseEnumOptionalDefault(enum *Enum) parserAction[*Schema] {
 			return parseSemicolon(parseType), nil
 		}
 
-		// The token might be an annotation for the next type or a type keyword.
+		// The token might be a doc comment, annotation, or type keyword.
+		var doc string
+		if tok.Type == TokenDocComment {
+			doc = cleanDocComment(string(tok.Value))
+			tok, err, ok = p.read()
+			if !ok {
+				return nil, nil
+			}
+			if err != nil {
+				return nil, err
+			}
+		}
+
 		if tok.Type == TokenAnnotation {
 			p.unread(tok)
 			annotations, err := collectAnnotations(p)
@@ -799,9 +862,9 @@ func parseEnumOptionalDefault(enum *Enum) parserAction[*Schema] {
 			if err != nil {
 				return nil, err
 			}
-			return dispatchType(tok, annotations), nil
+			return dispatchType(tok, doc, annotations), nil
 		}
-		return dispatchType(tok, nil), nil
+		return dispatchType(tok, doc, nil), nil
 	}
 }
 
@@ -987,6 +1050,10 @@ func parseRecordOpenBrace(p *parser, rec *Record) (parserAction[*Record], error)
 }
 
 func parseRecordFieldType(p *parser, rec *Record) (parserAction[*Record], error) {
+	doc, err := collectDocComment(p)
+	if err != nil {
+		return nil, err
+	}
 	preTypeAnnotations, err := collectAnnotations(p)
 	if err != nil {
 		return nil, err
@@ -995,7 +1062,7 @@ func parseRecordFieldType(p *parser, rec *Record) (parserAction[*Record], error)
 	if err != nil {
 		return nil, err
 	}
-	field := &Field{Type: typ}
+	field := &Field{Doc: doc, Type: typ}
 	applyAnnotationsToField(field, preTypeAnnotations)
 	rec.Fields = append(rec.Fields, field)
 	return parseRecordFieldNullableOrName(field), nil
@@ -1238,6 +1305,10 @@ func parseRecordFieldSemicolon(p *parser, rec *Record) (parserAction[*Record], e
 }
 
 func parseRecordFieldTypeOrClose(p *parser, rec *Record) (parserAction[*Record], error) {
+	doc, err := collectDocComment(p)
+	if err != nil {
+		return nil, err
+	}
 	preTypeAnnotations, err := collectAnnotations(p)
 	if err != nil {
 		return nil, err
@@ -1266,7 +1337,7 @@ func parseRecordFieldTypeOrClose(p *parser, rec *Record) (parserAction[*Record],
 		default:
 			typ = Ident{Pos: tok.Pos, Value: string(tok.Value)}
 		}
-		field := &Field{Type: typ}
+		field := &Field{Doc: doc, Type: typ}
 		applyAnnotationsToField(field, preTypeAnnotations)
 		rec.Fields = append(rec.Fields, field)
 		return parseRecordFieldNullableOrName(field), nil
