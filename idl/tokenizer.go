@@ -322,12 +322,14 @@ func tokenizeIdentifier(t *tokenizer, yield func(Token, error) bool) tokenizerAc
 		return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '.'
 	})
 
+	tok := Token{Pos: pos, Type: TokenIdentifier, Value: ident.Bytes()}
+	if errors.Is(err, io.ErrUnexpectedEOF) {
+		return yieldTokenThen(tok, nil)
+	}
+
 	return yieldErrorOr(
 		err,
-		yieldTokenThen(
-			Token{Pos: pos, Type: TokenIdentifier, Value: ident.Bytes()},
-			skipWhitespace(tokenizeIDL),
-		),
+		yieldTokenThen(tok, skipWhitespace(tokenizeIDL)),
 	)
 }
 
@@ -339,12 +341,14 @@ func tokenizeNumber(t *tokenizer, yield func(Token, error) bool) tokenizerAction
 		return unicode.IsDigit(r)
 	})
 
+	tok := Token{Pos: pos, Type: TokenNumber, Value: num.Bytes()}
+	if errors.Is(err, io.ErrUnexpectedEOF) {
+		return yieldTokenThen(tok, nil)
+	}
+
 	return yieldErrorOr(
 		err,
-		yieldTokenThen(
-			Token{Pos: pos, Type: TokenNumber, Value: num.Bytes()},
-			skipWhitespace(tokenizeIDL),
-		),
+		yieldTokenThen(tok, skipWhitespace(tokenizeIDL)),
 	)
 }
 
