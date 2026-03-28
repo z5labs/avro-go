@@ -303,6 +303,68 @@ enum Suit {
 } = HEARTS;
 `,
 		},
+		{
+			name: "nullable union schema shorthand",
+			input: &File{
+				Schema: &Schema{
+					Pos: Pos{Line: 1, Column: 1},
+					Type: &Union{
+						Types: []Type{
+							Ident{Value: "null"},
+							Ident{Value: "string"},
+						},
+					},
+				},
+			},
+			expected: `schema string?;`,
+		},
+		{
+			name: "nullable union schema with namespace",
+			input: &File{
+				Schema: &Schema{
+					Pos:       Pos{Line: 2, Column: 1},
+					Namespace: "com.example",
+					Type: &Union{
+						Types: []Type{
+							Ident{Value: "null"},
+							Ident{Value: "int"},
+						},
+					},
+				},
+			},
+			expected: `namespace com.example;
+schema int?;`,
+		},
+		{
+			name: "multi-type union schema verbose",
+			input: &File{
+				Schema: &Schema{
+					Pos: Pos{Line: 1, Column: 1},
+					Type: &Union{
+						Types: []Type{
+							Ident{Value: "null"},
+							Ident{Value: "string"},
+							Ident{Value: "int"},
+						},
+					},
+				},
+			},
+			expected: `schema union { null, string, int };`,
+		},
+		{
+			name: "single-type union schema verbose",
+			input: &File{
+				Schema: &Schema{
+					Pos: Pos{Line: 1, Column: 1},
+					Type: &Union{
+						Types: []Type{
+							Ident{Value: "int"},
+						},
+					},
+				},
+			},
+			expected: `schema union { int };`,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -395,6 +457,23 @@ enum Suit {
 } = HEARTS;
 `,
 		},
+		{
+			name: "nullable union shorthand",
+			src:  `schema string?;`,
+		},
+		{
+			name: "nullable union with namespace",
+			src: `namespace com.example;
+schema int?;`,
+		},
+		{
+			name: "multi-type union",
+			src:  `schema union { null, string, int };`,
+		},
+		{
+			name: "single-type union",
+			src:  `schema union { int };`,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -427,6 +506,16 @@ enum Suit {
 				t2, ok := file2.Schema.Type.(Ident)
 				require.True(t, ok)
 				require.Equal(t, t1.Value, t2.Value)
+			case *Union:
+				t2, ok := file2.Schema.Type.(*Union)
+				require.True(t, ok, "expected *Union")
+				require.Equal(t, len(t1.Types), len(t2.Types))
+				for j := range t1.Types {
+					id1, ok1 := t1.Types[j].(Ident)
+					id2, ok2 := t2.Types[j].(Ident)
+					require.True(t, ok1 && ok2, "expected Ident types in union")
+					require.Equal(t, id1.Value, id2.Value)
+				}
 			}
 
 			// Compare Schema.Types (e.g., enums, records)
