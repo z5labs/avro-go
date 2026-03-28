@@ -832,7 +832,7 @@ func parseRecordFieldTypeOrClose(p *parser, rec *Record) (parserAction[*Record],
 				Actual:   tok,
 			}
 		}
-		return parseSemicolon[*Record](nil), nil
+		return nil, nil
 	default:
 		return nil, UnexpectedTokenError{
 			Expected: []TokenType{TokenIdentifier, TokenSymbol},

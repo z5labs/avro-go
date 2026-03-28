@@ -254,14 +254,6 @@ record Employee {
 				Actual:   Token{Pos: Pos{Line: 4, Column: 1}, Type: TokenSymbol, Value: []byte(";")},
 			},
 		},
-		{
-			name: "record missing trailing semicolon",
-			src: `schema int;
-record Employee {
-  string name;
-}`,
-			expectedErr: UnexpectedEndOfTokensError{Expected: []TokenType{TokenSymbol}},
-		},
 	}
 
 	for _, tc := range testCases {
@@ -741,7 +733,7 @@ schema int?;`,
 			src: `schema int;
 record Employee {
   string name;
-};`,
+}`,
 			expected: &File{
 				Schema: &Schema{
 					Pos:  Pos{Line: 1, Column: 1},
@@ -767,7 +759,7 @@ record Employee {
   string name;
   boolean active;
   long salary;
-};`,
+}`,
 			expected: &File{
 				Schema: &Schema{
 					Pos:  Pos{Line: 1, Column: 1},
@@ -799,7 +791,7 @@ record Employee {
 			src: `schema int;
 record Employee {
   string? name;
-};`,
+}`,
 			expected: &File{
 				Schema: &Schema{
 					Pos:  Pos{Line: 1, Column: 1},
@@ -828,7 +820,7 @@ record Employee {
 			src: `schema int;
 record Employee {
   map<string> metadata;
-};`,
+}`,
 			expected: &File{
 				Schema: &Schema{
 					Pos:  Pos{Line: 1, Column: 1},
@@ -854,7 +846,7 @@ record Employee {
 			src: `schema int;
 record Employee {
   union { null, string } name;
-};`,
+}`,
 			expected: &File{
 				Schema: &Schema{
 					Pos:  Pos{Line: 1, Column: 1},
@@ -883,10 +875,10 @@ record Employee {
 			src: `schema int;
 record Employee {
   string name;
-};
+}
 record Department {
   string title;
-};`,
+}`,
 			expected: &File{
 				Schema: &Schema{
 					Pos:  Pos{Line: 1, Column: 1},
@@ -915,12 +907,44 @@ record Department {
 			},
 		},
 		{
-			name: "schema with record and enum types",
+			name: "schema with record followed by enum",
+			src: `schema int;
+record Employee {
+  string name;
+}
+enum Status { ACTIVE, INACTIVE }`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Employee",
+							Fields: []*Field{
+								{
+									Name: "name",
+									Type: Ident{Pos: Pos{Line: 3, Column: 3}, Value: "string"},
+								},
+							},
+						},
+						&Enum{
+							Name: "Status",
+							Values: []*Ident{
+								{Pos: Pos{Line: 5, Column: 15}, Value: "ACTIVE"},
+								{Pos: Pos{Line: 5, Column: 23}, Value: "INACTIVE"},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "schema with enum followed by record",
 			src: `schema int;
 enum Status { ACTIVE, INACTIVE }
 record Employee {
   string name;
-};`,
+}`,
 			expected: &File{
 				Schema: &Schema{
 					Pos:  Pos{Line: 1, Column: 1},
