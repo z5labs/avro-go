@@ -107,7 +107,18 @@ func printSchemaKeyword(pr *printer, f *File) printerAction {
 }
 
 func printSchemaType(pr *printer, f *File) printerAction {
-	return printType(f.Schema.Type, writeThen(";", nil))
+	return printType(f.Schema.Type, writeThen(";", printSchemaTypes(0)))
+}
+
+// printSchemaTypes prints the type definitions in Schema.Types.
+func printSchemaTypes(idx int) printerAction {
+	return func(pr *printer, f *File) printerAction {
+		if idx >= len(f.Schema.Types) {
+			return nil
+		}
+		pr.write("\n")
+		return printType(f.Schema.Types[idx], printSchemaTypes(idx+1))
+	}
 }
 
 func printType(t Type, next printerAction) printerAction {
@@ -119,10 +130,156 @@ func printType(t Type, next printerAction) printerAction {
 		switch typ := t.(type) {
 		case Ident:
 			pr.write(typ.Value)
+		case *Enum:
+			return printEnum(typ, next)
 		default:
 			pr.err = fmt.Errorf("idl: unsupported schema type %T in printer", typ)
 			return nil
 		}
+		return next
+	}
+}
+
+// printEnum prints an enum type definition.
+func printEnum(e *Enum, next printerAction) printerAction {
+	return printDoc(e.Doc,
+		printNamespaceAnnotation(e.Namespace,
+			printAliasesAnnotation(e.Aliases,
+				printProperties(e.Properties,
+					printEnumKeywordAndName(e.Name,
+						printEnumValues(e.Values, 0,
+							printEnumDefault(e.Default, next)))))))
+}
+
+// printDoc prints a doc comment if non-empty.
+func printDoc(doc string, next printerAction) printerAction {
+	if doc == "" {
+		return next
+	}
+	return func(pr *printer, f *File) printerAction {
+		pr.writef("/** %s */\n", doc)
+		return next
+	}
+}
+
+// printNamespaceAnnotation prints a @namespace annotation if non-empty.
+func printNamespaceAnnotation(ns string, next printerAction) printerAction {
+	if ns == "" {
+		return next
+	}
+	return func(pr *printer, f *File) printerAction {
+		pr.writef("@namespace(\"%s\")\n", ns)
+		return next
+	}
+}
+
+// printAliasesAnnotation prints an @aliases annotation if non-empty.
+func printAliasesAnnotation(aliases []string, next printerAction) printerAction {
+	if len(aliases) == 0 {
+		return next
+	}
+	return func(pr *printer, f *File) printerAction {
+		pr.write("@aliases([")
+		for i, alias := range aliases {
+			if i > 0 {
+				pr.write(", ")
+			}
+			pr.writef("\"%s\"", alias)
+		}
+		pr.write("])\n")
+		return next
+	}
+}
+
+// printProperties prints custom @property annotations.
+func printProperties(props map[string]Value, next printerAction) printerAction {
+	if len(props) == 0 {
+		return next
+	}
+	return func(pr *printer, f *File) printerAction {
+		for name, val := range props {
+			pr.writef("@%s(", name)
+			printValue(pr, val)
+			pr.write(")\n")
+		}
+		return next
+	}
+}
+
+// printValue prints a Value (used in annotations and defaults).
+func printValue(pr *printer, v Value) {
+	switch val := v.(type) {
+	case NullValue:
+		pr.write("null")
+	case BoolValue:
+		if val {
+			pr.write("true")
+		} else {
+			pr.write("false")
+		}
+	case IntValue:
+		pr.writef("%d", int64(val))
+	case FloatValue:
+		pr.writef("%g", float64(val))
+	case StringValue:
+		pr.writef("\"%s\"", string(val))
+	case ArrayValue:
+		pr.write("[")
+		for i, elem := range val {
+			if i > 0 {
+				pr.write(", ")
+			}
+			printValue(pr, elem)
+		}
+		pr.write("]")
+	case ObjectValue:
+		pr.write("{")
+		first := true
+		for k, v := range val {
+			if !first {
+				pr.write(", ")
+			}
+			first = false
+			pr.writef("\"%s\": ", k)
+			printValue(pr, v)
+		}
+		pr.write("}")
+	}
+}
+
+// printEnumKeywordAndName prints "enum Name ".
+func printEnumKeywordAndName(name string, next printerAction) printerAction {
+	return func(pr *printer, f *File) printerAction {
+		pr.writef("enum %s ", name)
+		return next
+	}
+}
+
+// printEnumValues prints the enum values: { VALUE1, VALUE2, ... }
+func printEnumValues(values []*Ident, idx int, next printerAction) printerAction {
+	return func(pr *printer, f *File) printerAction {
+		if idx == 0 {
+			pr.write("{ ")
+		}
+		if idx >= len(values) {
+			pr.write(" }")
+			return next
+		}
+		if idx > 0 {
+			pr.write(", ")
+		}
+		pr.write(values[idx].Value)
+		return printEnumValues(values, idx+1, next)
+	}
+}
+
+// printEnumDefault prints the enum default value if present, then a newline.
+func printEnumDefault(def *Ident, next printerAction) printerAction {
+	return func(pr *printer, f *File) printerAction {
+		if def != nil {
+			pr.writef(" = %s;", def.Value)
+		}
+		pr.write("\n")
 		return next
 	}
 }
