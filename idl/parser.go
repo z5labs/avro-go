@@ -319,11 +319,14 @@ func (p *parser) expectIdentifier() (Token, error) {
 			return Token{}, err
 		}
 
-		closeTok, err := p.expect(TokenSymbol)
+		closeTok, err, ok := p.read()
 		if err != nil {
+			return Token{}, err
+		}
+		if !ok {
 			return Token{}, UnterminatedEscapedIdentifierError{Pos: startPos}
 		}
-		if !bytes.Equal(closeTok.Value, []byte("`")) {
+		if closeTok.Type != TokenSymbol || !bytes.Equal(closeTok.Value, []byte("`")) {
 			return Token{}, UnterminatedEscapedIdentifierError{Pos: startPos}
 		}
 

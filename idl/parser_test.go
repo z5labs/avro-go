@@ -1963,6 +1963,11 @@ func TestParserEscapedIdentifierErrors(t *testing.T) {
 			src:         "schema int;\nenum Color { `null }",
 			expectedErr: UnterminatedEscapedIdentifierError{Pos: Pos{Line: 2, Column: 14}},
 		},
+		{
+			name:        "tokenizer error inside escaped identifier is preserved",
+			src:         "schema int;\nrecord `name$ { }",
+			expectedErr: UnexpectedCharacterError{Pos: Pos{Line: 2, Column: 14}, R: '$'},
+		},
 	}
 
 	for _, tc := range testCases {
