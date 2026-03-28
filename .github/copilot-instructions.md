@@ -50,6 +50,10 @@ type parserAction[T any] func(p *parser, t T) (parserAction[T], error)
 Schema types implement the `Type` interface with marker method `idl()`:
 `Record`, `Enum`, `Array`, `Map`, `Union`, `Fixed`
 
+### Detailed IDL Guidance
+
+For in-depth patterns when working on the tokenizer or parser (helper functions like `yieldErrorOr`, `yieldTokenThen`, `skipWhitespace`, closure patterns, error types), see `idl/CLAUDE.md`.
+
 ## Conventions
 
 ### Commit Messages
