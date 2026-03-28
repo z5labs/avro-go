@@ -8,6 +8,7 @@ package idl
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"iter"
 	"slices"
@@ -214,6 +215,17 @@ func (e UnexpectedTokenError) Error() string {
 	return "unexpected token: " + e.Actual.String() + ", expected one of: " + strings.Join(expected, ", ")
 }
 
+// UnterminatedEscapedIdentifierError is the error returned by the parser when it encounters an
+// escaped identifier that is missing a closing backtick.
+type UnterminatedEscapedIdentifierError struct {
+	Pos Pos
+}
+
+// Error implements the [error] interface.
+func (e UnterminatedEscapedIdentifierError) Error() string {
+	return fmt.Sprintf("unterminated escaped identifier at line %d, column %d", e.Pos.Line, e.Pos.Column)
+}
+
 // Parse the Avro IDL defined in the given reader.
 func Parse(r io.Reader) (file *File, err error) {
 	next, stop := iter.Pull2(Tokenize(r))
@@ -278,6 +290,48 @@ func (p *parser) expect(expected ...TokenType) (Token, error) {
 
 	return Token{}, UnexpectedTokenError{
 		Expected: expected,
+		Actual:   tok,
+	}
+}
+
+// expectIdentifier reads either a regular identifier token or an escaped
+// identifier enclosed in backticks. For escaped identifiers like `error`,
+// it returns a Token containing the unescaped value ("error").
+func (p *parser) expectIdentifier() (Token, error) {
+	tok, err, ok := p.read()
+	if err != nil {
+		return Token{}, err
+	}
+	if !ok {
+		return Token{}, UnexpectedEndOfTokensError{Expected: []TokenType{TokenIdentifier}}
+	}
+
+	// Regular identifier
+	if tok.Type == TokenIdentifier {
+		return tok, nil
+	}
+
+	// Escaped identifier: ` identifier `
+	if tok.Type == TokenSymbol && bytes.Equal(tok.Value, []byte("`")) {
+		startPos := tok.Pos
+		identTok, err := p.expect(TokenIdentifier)
+		if err != nil {
+			return Token{}, err
+		}
+
+		closeTok, err := p.expect(TokenSymbol)
+		if err != nil {
+			return Token{}, UnterminatedEscapedIdentifierError{Pos: startPos}
+		}
+		if !bytes.Equal(closeTok.Value, []byte("`")) {
+			return Token{}, UnterminatedEscapedIdentifierError{Pos: startPos}
+		}
+
+		return Token{Pos: startPos, Type: TokenIdentifier, Value: identTok.Value}, nil
+	}
+
+	return Token{}, UnexpectedTokenError{
+		Expected: []TokenType{TokenIdentifier},
 		Actual:   tok,
 	}
 }
@@ -552,11 +606,10 @@ func parseSchemaTypes(p *parser, file *File) (_ parserAction[*File], err error) 
 
 func parseIdent[T any](f func(Token) (parserAction[T], error)) parserAction[T] {
 	return func(p *parser, t T) (parserAction[T], error) {
-		tok, err := p.expect(TokenIdentifier)
+		tok, err := p.expectIdentifier()
 		if err != nil {
 			return nil, err
 		}
-
 		return f(tok)
 	}
 }
@@ -610,7 +663,7 @@ func parseSchemaType[T any](f func(Type) (parserAction[T], error)) parserAction[
 }
 
 func parseTypeRef(p *parser) (Type, error) {
-	tok, err := p.expect(TokenIdentifier)
+	tok, err := p.expectIdentifier()
 	if err != nil {
 		return nil, err
 	}
@@ -636,7 +689,7 @@ func parseMapType(p *parser) (*Map, error) {
 		}
 	}
 
-	valTok, err := p.expect(TokenIdentifier)
+	valTok, err := p.expectIdentifier()
 	if err != nil {
 		return nil, err
 	}
@@ -710,43 +763,59 @@ func parseUnionMemberSep(p *parser, u *Union) (parserAction[*Union], error) {
 }
 
 func parseUnionMemberOrClose(p *parser, u *Union) (parserAction[*Union], error) {
-	tok, err := p.expect(TokenIdentifier, TokenSymbol)
+	tok, err, ok := p.read()
 	if err != nil {
 		return nil, err
 	}
-	switch tok.Type {
-	case TokenIdentifier:
-		switch string(tok.Value) {
-		case "map":
-			m, err := parseMapType(p)
+	if !ok {
+		return nil, UnexpectedEndOfTokensError{Expected: []TokenType{TokenIdentifier, TokenSymbol}}
+	}
+
+	// Check for closing brace
+	if tok.Type == TokenSymbol {
+		if bytes.Equal(tok.Value, []byte("}")) {
+			return nil, nil
+		}
+		// Check for escaped identifier starting with backtick
+		if bytes.Equal(tok.Value, []byte("`")) {
+			p.unread(tok)
+			identTok, err := p.expectIdentifier()
 			if err != nil {
 				return nil, err
 			}
-			u.Types = append(u.Types, m)
-		case "union":
-			nested, err := parseUnionType(p)
-			if err != nil {
-				return nil, err
-			}
-			u.Types = append(u.Types, nested)
-		default:
-			u.Types = append(u.Types, Ident{Pos: tok.Pos, Value: string(tok.Value)})
+			u.Types = append(u.Types, Ident{Pos: identTok.Pos, Value: string(identTok.Value)})
+			return parseUnionMemberSep, nil
 		}
-		return parseUnionMemberSep, nil
-	case TokenSymbol:
-		if !bytes.Equal(tok.Value, []byte("}")) {
-			return nil, UnexpectedTokenError{
-				Expected: []TokenType{TokenSymbol},
-				Actual:   tok,
-			}
-		}
-		return nil, nil
-	default:
 		return nil, UnexpectedTokenError{
 			Expected: []TokenType{TokenIdentifier, TokenSymbol},
 			Actual:   tok,
 		}
 	}
+
+	if tok.Type != TokenIdentifier {
+		return nil, UnexpectedTokenError{
+			Expected: []TokenType{TokenIdentifier, TokenSymbol},
+			Actual:   tok,
+		}
+	}
+
+	switch string(tok.Value) {
+	case "map":
+		m, err := parseMapType(p)
+		if err != nil {
+			return nil, err
+		}
+		u.Types = append(u.Types, m)
+	case "union":
+		nested, err := parseUnionType(p)
+		if err != nil {
+			return nil, err
+		}
+		u.Types = append(u.Types, nested)
+	default:
+		u.Types = append(u.Types, Ident{Pos: tok.Pos, Value: string(tok.Value)})
+	}
+	return parseUnionMemberSep, nil
 }
 
 func parseType(p *parser, schema *Schema) (_ parserAction[*Schema], err error) {
@@ -825,7 +894,7 @@ func parseEnumOptionalDefault(enum *Enum) parserAction[*Schema] {
 			return nil, err
 		}
 		if tok.Type == TokenSymbol && bytes.Equal(tok.Value, []byte("=")) {
-			defTok, err := p.expect(TokenIdentifier)
+			defTok, err := p.expectIdentifier()
 			if err != nil {
 				return nil, err
 			}
@@ -901,7 +970,7 @@ func parseEnumOpenBrace(p *parser, enum *Enum) (parserAction[*Enum], error) {
 }
 
 func parseEnumValue(p *parser, enum *Enum) (parserAction[*Enum], error) {
-	tok, err := p.expect(TokenIdentifier)
+	tok, err := p.expectIdentifier()
 	if err != nil {
 		return nil, err
 	}
@@ -931,31 +1000,50 @@ func parseEnumValueSep(p *parser, enum *Enum) (parserAction[*Enum], error) {
 }
 
 func parseEnumValueOrClose(p *parser, enum *Enum) (parserAction[*Enum], error) {
-	tok, err := p.expect(TokenIdentifier, TokenSymbol)
+	tok, err, ok := p.read()
 	if err != nil {
 		return nil, err
 	}
-	switch tok.Type {
-	case TokenIdentifier:
-		enum.Values = append(enum.Values, &Ident{
-			Pos:   tok.Pos,
-			Value: string(tok.Value),
-		})
-		return parseEnumValueSep, nil
-	case TokenSymbol:
-		if !bytes.Equal(tok.Value, []byte("}")) {
-			return nil, UnexpectedTokenError{
-				Expected: []TokenType{TokenSymbol},
-				Actual:   tok,
-			}
+	if !ok {
+		return nil, UnexpectedEndOfTokensError{Expected: []TokenType{TokenIdentifier, TokenSymbol}}
+	}
+
+	// Check for closing brace
+	if tok.Type == TokenSymbol {
+		if bytes.Equal(tok.Value, []byte("}")) {
+			return nil, nil
 		}
-		return nil, nil
-	default:
+		// Check for escaped identifier starting with backtick
+		if bytes.Equal(tok.Value, []byte("`")) {
+			p.unread(tok)
+			identTok, err := p.expectIdentifier()
+			if err != nil {
+				return nil, err
+			}
+			enum.Values = append(enum.Values, &Ident{
+				Pos:   identTok.Pos,
+				Value: string(identTok.Value),
+			})
+			return parseEnumValueSep, nil
+		}
 		return nil, UnexpectedTokenError{
 			Expected: []TokenType{TokenIdentifier, TokenSymbol},
 			Actual:   tok,
 		}
 	}
+
+	if tok.Type != TokenIdentifier {
+		return nil, UnexpectedTokenError{
+			Expected: []TokenType{TokenIdentifier, TokenSymbol},
+			Actual:   tok,
+		}
+	}
+
+	enum.Values = append(enum.Values, &Ident{
+		Pos:   tok.Pos,
+		Value: string(tok.Value),
+	})
+	return parseEnumValueSep, nil
 }
 
 func parseFixed(p *parser) (fixed *Fixed, err error) {
@@ -1070,10 +1158,14 @@ func parseRecordFieldType(p *parser, rec *Record) (parserAction[*Record], error)
 
 func parseRecordFieldNullableOrName(field *Field) parserAction[*Record] {
 	return func(p *parser, rec *Record) (parserAction[*Record], error) {
-		tok, err := p.expect(TokenIdentifier, TokenSymbol, TokenAnnotation)
+		tok, err, ok := p.read()
 		if err != nil {
 			return nil, err
 		}
+		if !ok {
+			return nil, UnexpectedEndOfTokensError{Expected: []TokenType{TokenIdentifier, TokenSymbol, TokenAnnotation}}
+		}
+
 		switch tok.Type {
 		case TokenAnnotation:
 			p.unread(tok)
@@ -1087,14 +1179,24 @@ func parseRecordFieldNullableOrName(field *Field) parserAction[*Record] {
 			field.Name = string(tok.Value)
 			return parseRecordFieldDefaultOrSemicolon(field), nil
 		case TokenSymbol:
-			if !bytes.Equal(tok.Value, []byte("?")) {
-				return nil, UnexpectedTokenError{
-					Expected: []TokenType{TokenIdentifier, TokenSymbol, TokenAnnotation},
-					Actual:   tok,
-				}
+			if bytes.Equal(tok.Value, []byte("?")) {
+				field.Type = &Union{Types: []Type{Ident{Value: "null"}, field.Type}}
+				return parseRecordFieldAnnotationsOrName(field), nil
 			}
-			field.Type = &Union{Types: []Type{Ident{Value: "null"}, field.Type}}
-			return parseRecordFieldAnnotationsOrName(field), nil
+			// Check for escaped identifier starting with backtick
+			if bytes.Equal(tok.Value, []byte("`")) {
+				p.unread(tok)
+				identTok, err := p.expectIdentifier()
+				if err != nil {
+					return nil, err
+				}
+				field.Name = string(identTok.Value)
+				return parseRecordFieldDefaultOrSemicolon(field), nil
+			}
+			return nil, UnexpectedTokenError{
+				Expected: []TokenType{TokenIdentifier, TokenSymbol, TokenAnnotation},
+				Actual:   tok,
+			}
 		default:
 			return nil, UnexpectedTokenError{
 				Expected: []TokenType{TokenIdentifier, TokenSymbol, TokenAnnotation},
@@ -1314,45 +1416,63 @@ func parseRecordFieldTypeOrClose(p *parser, rec *Record) (parserAction[*Record],
 		return nil, err
 	}
 
-	tok, err := p.expect(TokenIdentifier, TokenSymbol)
+	tok, err, ok := p.read()
 	if err != nil {
 		return nil, err
 	}
-	switch tok.Type {
-	case TokenIdentifier:
-		var typ Type
-		switch string(tok.Value) {
-		case "map":
-			m, err := parseMapType(p)
+	if !ok {
+		return nil, UnexpectedEndOfTokensError{Expected: []TokenType{TokenIdentifier, TokenSymbol}}
+	}
+
+	// Check for closing brace
+	if tok.Type == TokenSymbol {
+		if bytes.Equal(tok.Value, []byte("}")) {
+			return nil, nil
+		}
+		// Check for escaped identifier starting with backtick
+		if bytes.Equal(tok.Value, []byte("`")) {
+			p.unread(tok)
+			identTok, err := p.expectIdentifier()
 			if err != nil {
 				return nil, err
 			}
-			typ = m
-		case "union":
-			u, err := parseUnionType(p)
-			if err != nil {
-				return nil, err
-			}
-			typ = u
-		default:
-			typ = Ident{Pos: tok.Pos, Value: string(tok.Value)}
+			field := &Field{Doc: doc, Type: Ident{Pos: identTok.Pos, Value: string(identTok.Value)}}
+			applyAnnotationsToField(field, preTypeAnnotations)
+			rec.Fields = append(rec.Fields, field)
+			return parseRecordFieldNullableOrName(field), nil
 		}
-		field := &Field{Doc: doc, Type: typ}
-		applyAnnotationsToField(field, preTypeAnnotations)
-		rec.Fields = append(rec.Fields, field)
-		return parseRecordFieldNullableOrName(field), nil
-	case TokenSymbol:
-		if !bytes.Equal(tok.Value, []byte("}")) {
-			return nil, UnexpectedTokenError{
-				Expected: []TokenType{TokenIdentifier, TokenSymbol},
-				Actual:   tok,
-			}
-		}
-		return nil, nil
-	default:
 		return nil, UnexpectedTokenError{
 			Expected: []TokenType{TokenIdentifier, TokenSymbol},
 			Actual:   tok,
 		}
 	}
+
+	if tok.Type != TokenIdentifier {
+		return nil, UnexpectedTokenError{
+			Expected: []TokenType{TokenIdentifier, TokenSymbol},
+			Actual:   tok,
+		}
+	}
+
+	var typ Type
+	switch string(tok.Value) {
+	case "map":
+		m, err := parseMapType(p)
+		if err != nil {
+			return nil, err
+		}
+		typ = m
+	case "union":
+		u, err := parseUnionType(p)
+		if err != nil {
+			return nil, err
+		}
+		typ = u
+	default:
+		typ = Ident{Pos: tok.Pos, Value: string(tok.Value)}
+	}
+	field := &Field{Doc: doc, Type: typ}
+	applyAnnotationsToField(field, preTypeAnnotations)
+	rec.Fields = append(rec.Fields, field)
+	return parseRecordFieldNullableOrName(field), nil
 }
