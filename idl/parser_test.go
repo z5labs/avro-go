@@ -939,6 +939,348 @@ enum Status { ACTIVE, INACTIVE }`,
 			},
 		},
 		{
+			name: "record field with null default value",
+			src: `schema int;
+record Config {
+  int? value = null;
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Config",
+							Fields: []*Field{
+								{
+									Name:    "value",
+									Type:    &Union{Types: []Type{Ident{Value: "null"}, Ident{Pos: Pos{Line: 3, Column: 3}, Value: "int"}}},
+									Default: NullValue{},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "record field with boolean default value",
+			src: `schema int;
+record Config {
+  boolean active = true;
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Config",
+							Fields: []*Field{
+								{
+									Name:    "active",
+									Type:    Ident{Pos: Pos{Line: 3, Column: 3}, Value: "boolean"},
+									Default: BoolValue(true),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "record field with integer default value",
+			src: `schema int;
+record Config {
+  int count = 42;
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Config",
+							Fields: []*Field{
+								{
+									Name:    "count",
+									Type:    Ident{Pos: Pos{Line: 3, Column: 3}, Value: "int"},
+									Default: IntValue(42),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "record field with float default value",
+			src: `schema int;
+record Config {
+  double rate = 3.14;
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Config",
+							Fields: []*Field{
+								{
+									Name:    "rate",
+									Type:    Ident{Pos: Pos{Line: 3, Column: 3}, Value: "double"},
+									Default: FloatValue(3.14),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "record field with negative number default value",
+			src: `schema int;
+record Config {
+  int offset = -1;
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Config",
+							Fields: []*Field{
+								{
+									Name:    "offset",
+									Type:    Ident{Pos: Pos{Line: 3, Column: 3}, Value: "int"},
+									Default: IntValue(-1),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "record field with string default value",
+			src: `schema int;
+record Config {
+  string name = "hello";
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Config",
+							Fields: []*Field{
+								{
+									Name:    "name",
+									Type:    Ident{Pos: Pos{Line: 3, Column: 3}, Value: "string"},
+									Default: StringValue("hello"),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "record field with empty string default value",
+			src: `schema int;
+record Config {
+  string name = "";
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Config",
+							Fields: []*Field{
+								{
+									Name:    "name",
+									Type:    Ident{Pos: Pos{Line: 3, Column: 3}, Value: "string"},
+									Default: StringValue(""),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "record field with array default value",
+			src: `schema int;
+record Config {
+  Nums nums = [1, 2, 3];
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Config",
+							Fields: []*Field{
+								{
+									Name:    "nums",
+									Type:    Ident{Pos: Pos{Line: 3, Column: 3}, Value: "Nums"},
+									Default: ArrayValue{IntValue(1), IntValue(2), IntValue(3)},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "record field with empty array default value",
+			src: `schema int;
+record Config {
+  Nums nums = [];
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Config",
+							Fields: []*Field{
+								{
+									Name:    "nums",
+									Type:    Ident{Pos: Pos{Line: 3, Column: 3}, Value: "Nums"},
+									Default: ArrayValue(nil),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "record field with object default value",
+			src: `schema int;
+record Config {
+  map<string> meta = {"key": "val"};
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Config",
+							Fields: []*Field{
+								{
+									Name: "meta",
+									Type: &Map{
+										Values: &Ident{Pos: Pos{Line: 3, Column: 7}, Value: "string"},
+									},
+									Default: ObjectValue{"key": StringValue("val")},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "record field with empty object default value",
+			src: `schema int;
+record Config {
+  map<string> meta = {};
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Config",
+							Fields: []*Field{
+								{
+									Name: "meta",
+									Type: &Map{
+										Values: &Ident{Pos: Pos{Line: 3, Column: 7}, Value: "string"},
+									},
+									Default: ObjectValue{},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "record field with nested array default value",
+			src: `schema int;
+record Config {
+  Grid grid = [[1, 2], [3, 4]];
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Config",
+							Fields: []*Field{
+								{
+									Name: "grid",
+									Type: Ident{Pos: Pos{Line: 3, Column: 3}, Value: "Grid"},
+									Default: ArrayValue{
+										ArrayValue{IntValue(1), IntValue(2)},
+										ArrayValue{IntValue(3), IntValue(4)},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "record with mixed fields with and without defaults",
+			src: `schema int;
+record Employee {
+  string name;
+  boolean active = true;
+  int age;
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Employee",
+							Fields: []*Field{
+								{
+									Name: "name",
+									Type: Ident{Pos: Pos{Line: 3, Column: 3}, Value: "string"},
+								},
+								{
+									Name:    "active",
+									Type:    Ident{Pos: Pos{Line: 4, Column: 3}, Value: "boolean"},
+									Default: BoolValue(true),
+								},
+								{
+									Name: "age",
+									Type: Ident{Pos: Pos{Line: 5, Column: 3}, Value: "int"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "schema with enum followed by record",
 			src: `schema int;
 enum Status { ACTIVE, INACTIVE }
