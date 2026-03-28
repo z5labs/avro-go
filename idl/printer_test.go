@@ -472,7 +472,7 @@ schema array<string>;`,
 			expected: `schema union { null, array<string>, int };`,
 		},
 		{
-			name: "nested array in map",
+			name: "nested map in array",
 			input: &File{
 				Schema: &Schema{
 					Pos:  Pos{Line: 1, Column: 1},
@@ -482,7 +482,7 @@ schema array<string>;`,
 			expected: `schema array<map<string>>;`,
 		},
 		{
-			name: "nested map in array",
+			name: "nested arrays",
 			input: &File{
 				Schema: &Schema{
 					Pos:  Pos{Line: 1, Column: 1},

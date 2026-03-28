@@ -194,6 +194,10 @@ func printUnionTypes(types []Type, idx int, next printerAction) printerAction {
 // printMap prints a map type in the form map<valueType>.
 func printMap(m *Map, next printerAction) printerAction {
 	return func(pr *printer, f *File) printerAction {
+		if m == nil || m.Values == nil {
+			pr.err = fmt.Errorf("idl: map has nil Values")
+			return nil
+		}
 		pr.writef("map<%s>", m.Values.Value)
 		return next
 	}
