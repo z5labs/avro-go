@@ -643,6 +643,400 @@ fixed MD5(16);
 fixed SHA256(32);
 `,
 		},
+		{
+			name: "basic record type",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Person",
+							Fields: []*Field{
+								{Name: "name", Type: Ident{Value: "string"}},
+								{Name: "age", Type: Ident{Value: "int"}},
+							},
+						},
+					},
+				},
+			},
+			expected: `schema int;
+record Person {
+  string name;
+  int age;
+}
+`,
+		},
+		{
+			name: "record with doc comment",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Doc:  "A person.",
+							Name: "Person",
+							Fields: []*Field{
+								{Name: "name", Type: Ident{Value: "string"}},
+							},
+						},
+					},
+				},
+			},
+			expected: `schema int;
+/** A person. */
+record Person {
+  string name;
+}
+`,
+		},
+		{
+			name: "record with namespace",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name:      "Person",
+							Namespace: "com.example",
+							Fields: []*Field{
+								{Name: "name", Type: Ident{Value: "string"}},
+							},
+						},
+					},
+				},
+			},
+			expected: `schema int;
+@namespace("com.example")
+record Person {
+  string name;
+}
+`,
+		},
+		{
+			name: "record with aliases",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name:    "Person",
+							Aliases: []string{"Human", "Individual"},
+							Fields: []*Field{
+								{Name: "name", Type: Ident{Value: "string"}},
+							},
+						},
+					},
+				},
+			},
+			expected: `schema int;
+@aliases(["Human", "Individual"])
+record Person {
+  string name;
+}
+`,
+		},
+		{
+			name: "record with properties",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Person",
+							Properties: map[string]Value{
+								"version": IntValue(2),
+							},
+							Fields: []*Field{
+								{Name: "name", Type: Ident{Value: "string"}},
+							},
+						},
+					},
+				},
+			},
+			expected: `schema int;
+@version(2)
+record Person {
+  string name;
+}
+`,
+		},
+		{
+			name: "record with all annotations",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Doc:       "A person.",
+							Name:      "Person",
+							Namespace: "com.example",
+							Aliases:   []string{"Human"},
+							Properties: map[string]Value{
+								"version": IntValue(1),
+							},
+							Fields: []*Field{
+								{Name: "name", Type: Ident{Value: "string"}},
+							},
+						},
+					},
+				},
+			},
+			expected: `schema int;
+/** A person. */
+@namespace("com.example")
+@aliases(["Human"])
+@version(1)
+record Person {
+  string name;
+}
+`,
+		},
+		{
+			name: "record field with doc comment",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Person",
+							Fields: []*Field{
+								{Doc: "The name.", Name: "name", Type: Ident{Value: "string"}},
+							},
+						},
+					},
+				},
+			},
+			expected: `schema int;
+record Person {
+  /** The name. */
+  string name;
+}
+`,
+		},
+		{
+			name: "record field with aliases",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Person",
+							Fields: []*Field{
+								{Name: "name", Aliases: []string{"fullName"}, Type: Ident{Value: "string"}},
+							},
+						},
+					},
+				},
+			},
+			expected: `schema int;
+record Person {
+  @aliases(["fullName"])
+  string name;
+}
+`,
+		},
+		{
+			name: "record field with order descending",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Person",
+							Fields: []*Field{
+								{Name: "name", Type: Ident{Value: "string"}, SortOrder: SortOrderDesc},
+							},
+						},
+					},
+				},
+			},
+			expected: `schema int;
+record Person {
+  string @order("descending") name;
+}
+`,
+		},
+		{
+			name: "record field with order ignore",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Person",
+							Fields: []*Field{
+								{Name: "name", Type: Ident{Value: "string"}, SortOrder: SortOrderIgnore},
+							},
+						},
+					},
+				},
+			},
+			expected: `schema int;
+record Person {
+  string @order("ignore") name;
+}
+`,
+		},
+		{
+			name: "record field with default string",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Person",
+							Fields: []*Field{
+								{Name: "name", Type: Ident{Value: "string"}, Default: StringValue("unknown")},
+							},
+						},
+					},
+				},
+			},
+			expected: `schema int;
+record Person {
+  string name = "unknown";
+}
+`,
+		},
+		{
+			name: "record field with default int",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Person",
+							Fields: []*Field{
+								{Name: "age", Type: Ident{Value: "int"}, Default: IntValue(0)},
+							},
+						},
+					},
+				},
+			},
+			expected: `schema int;
+record Person {
+  int age = 0;
+}
+`,
+		},
+		{
+			name: "record field with default null",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Person",
+							Fields: []*Field{
+								{Name: "name", Type: &Union{Types: []Type{Ident{Value: "null"}, Ident{Value: "string"}}}, Default: NullValue{}},
+							},
+						},
+					},
+				},
+			},
+			expected: `schema int;
+record Person {
+  string? name = null;
+}
+`,
+		},
+		{
+			name: "record field with all annotations",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Person",
+							Fields: []*Field{
+								{
+									Doc:       "The name.",
+									Name:      "name",
+									Aliases:   []string{"fullName"},
+									Type:      Ident{Value: "string"},
+									SortOrder: SortOrderDesc,
+									Default:   StringValue("unknown"),
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: `schema int;
+record Person {
+  /** The name. */
+  @aliases(["fullName"])
+  string @order("descending") name = "unknown";
+}
+`,
+		},
+		{
+			name: "record with nested types",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Person",
+							Fields: []*Field{
+								{Name: "tags", Type: &Array{Items: Ident{Value: "string"}}},
+								{Name: "metadata", Type: &Map{Values: &Ident{Value: "string"}}},
+							},
+						},
+					},
+				},
+			},
+			expected: `schema int;
+record Person {
+  array<string> tags;
+  map<string> metadata;
+}
+`,
+		},
+		{
+			name: "record with field custom properties",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Person",
+							Fields: []*Field{
+								{
+									Name: "name",
+									Type: Ident{Value: "string"},
+									Properties: map[string]Value{
+										"custom": StringValue("value"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: `schema int;
+record Person {
+  @custom("value")
+  string name;
+}
+`,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -783,6 +1177,79 @@ fixed MD5(16);
 fixed MD5(16);
 `,
 		},
+		{
+			name: "basic record",
+			src: `schema int;
+record Person {
+  string name;
+  int age;
+}
+`,
+		},
+		{
+			name: "record with namespace",
+			src: `schema int;
+@namespace("com.example")
+record Person {
+  string name;
+}
+`,
+		},
+		{
+			name: "record with all annotations",
+			src: `schema int;
+/** A person. */
+@namespace("com.example")
+@aliases(["Human"])
+record Person {
+  string name;
+}
+`,
+		},
+		{
+			name: "record field with doc",
+			src: `schema int;
+record Person {
+  /** The name. */
+  string name;
+}
+`,
+		},
+		{
+			name: "record field with aliases",
+			src: `schema int;
+record Person {
+  @aliases(["fullName"])
+  string name;
+}
+`,
+		},
+		{
+			name: "record field with order descending",
+			src: `schema int;
+record Person {
+  string @order("descending") name;
+}
+`,
+		},
+		{
+			name: "record field with default",
+			src: `schema int;
+record Person {
+  string name = "unknown";
+}
+`,
+		},
+		{
+			name: "record field with all annotations",
+			src: `schema int;
+record Person {
+  /** The name. */
+  @aliases(["fullName"])
+  string @order("descending") name = "unknown";
+}
+`,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -867,6 +1334,31 @@ fixed MD5(16);
 					require.Equal(t, len(typ1.Properties), len(typ2.Properties))
 					for k, v := range typ1.Properties {
 						require.Equal(t, v, typ2.Properties[k])
+					}
+				case *Record:
+					typ2, ok := file2.Schema.Types[i].(*Record)
+					require.True(t, ok, "expected *Record at index %d", i)
+					require.Equal(t, typ1.Doc, typ2.Doc)
+					require.Equal(t, typ1.Name, typ2.Name)
+					require.Equal(t, typ1.Namespace, typ2.Namespace)
+					require.Equal(t, typ1.Aliases, typ2.Aliases)
+					require.Equal(t, len(typ1.Properties), len(typ2.Properties))
+					for k, v := range typ1.Properties {
+						require.Equal(t, v, typ2.Properties[k])
+					}
+					require.Equal(t, len(typ1.Fields), len(typ2.Fields))
+					for j := range typ1.Fields {
+						f1, f2 := typ1.Fields[j], typ2.Fields[j]
+						require.Equal(t, f1.Doc, f2.Doc)
+						require.Equal(t, f1.Name, f2.Name)
+						require.Equal(t, f1.Aliases, f2.Aliases)
+						require.Equal(t, f1.SortOrder, f2.SortOrder)
+						require.Equal(t, f1.Default, f2.Default)
+						require.Equal(t, f1.Type, f2.Type)
+						require.Equal(t, len(f1.Properties), len(f2.Properties))
+						for k, v := range f1.Properties {
+							require.Equal(t, v, f2.Properties[k])
+						}
 					}
 				}
 			}
