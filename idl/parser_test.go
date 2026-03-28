@@ -228,7 +228,7 @@ record Employee { };`,
 			src: `schema int;
 record Employee { string ; };`,
 			expectedErr: UnexpectedTokenError{
-				Expected: []TokenType{TokenIdentifier, TokenSymbol},
+				Expected: []TokenType{TokenIdentifier, TokenSymbol, TokenAnnotation},
 				Actual:   Token{Pos: Pos{Line: 2, Column: 26}, Type: TokenSymbol, Value: []byte(";")},
 			},
 		},
@@ -1307,6 +1307,278 @@ record Employee {
 									Type: Ident{Pos: Pos{Line: 4, Column: 3}, Value: "string"},
 								},
 							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "record with namespace annotation",
+			src: `schema int;
+@namespace("org.example")
+record Employee {
+  string name;
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name:      "Employee",
+							Namespace: "org.example",
+							Fields: []*Field{
+								{
+									Name: "name",
+									Type: Ident{Pos: Pos{Line: 4, Column: 3}, Value: "string"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "record with aliases annotation",
+			src: `schema int;
+@aliases(["org.old.OldRecord", "org.ancient.AncientRecord"])
+record MyRecord {
+  string name;
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name:    "MyRecord",
+							Aliases: []string{"org.old.OldRecord", "org.ancient.AncientRecord"},
+							Fields: []*Field{
+								{
+									Name: "name",
+									Type: Ident{Pos: Pos{Line: 4, Column: 3}, Value: "string"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "record with namespace and aliases annotations",
+			src: `schema int;
+@namespace("org.example")
+@aliases(["org.old.OldRecord"])
+record MyRecord {
+  string name;
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name:      "MyRecord",
+							Namespace: "org.example",
+							Aliases:   []string{"org.old.OldRecord"},
+							Fields: []*Field{
+								{
+									Name: "name",
+									Type: Ident{Pos: Pos{Line: 5, Column: 3}, Value: "string"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "record with custom annotation",
+			src: `schema int;
+@custom("val")
+record Foo {
+  string name;
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name:       "Foo",
+							Properties: map[string]Value{"custom": StringValue("val")},
+							Fields: []*Field{
+								{
+									Name: "name",
+									Type: Ident{Pos: Pos{Line: 4, Column: 3}, Value: "string"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "field with order annotation ascending",
+			src: `schema int;
+record MyRecord {
+  string @order("ascending") name;
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "MyRecord",
+							Fields: []*Field{
+								{
+									Name:      "name",
+									Type:      Ident{Pos: Pos{Line: 3, Column: 3}, Value: "string"},
+									SortOrder: SortOrderAsc,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "field with order annotation descending",
+			src: `schema int;
+record MyRecord {
+  string @order("descending") name;
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "MyRecord",
+							Fields: []*Field{
+								{
+									Name:      "name",
+									Type:      Ident{Pos: Pos{Line: 3, Column: 3}, Value: "string"},
+									SortOrder: SortOrderDesc,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "field with order annotation ignore",
+			src: `schema int;
+record MyRecord {
+  string @order("ignore") name;
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "MyRecord",
+							Fields: []*Field{
+								{
+									Name:      "name",
+									Type:      Ident{Pos: Pos{Line: 3, Column: 3}, Value: "string"},
+									SortOrder: SortOrderIgnore,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "field with aliases annotation",
+			src: `schema int;
+record MyRecord {
+  string @aliases(["oldField", "ancientField"]) myNewField;
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "MyRecord",
+							Fields: []*Field{
+								{
+									Name:    "myNewField",
+									Type:    Ident{Pos: Pos{Line: 3, Column: 3}, Value: "string"},
+									Aliases: []string{"oldField", "ancientField"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "field with pre-type custom annotation",
+			src: `schema int;
+record Foo {
+  @custom("val") string name;
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Foo",
+							Fields: []*Field{
+								{
+									Name:       "name",
+									Type:       Ident{Pos: Pos{Line: 3, Column: 18}, Value: "string"},
+									Properties: map[string]Value{"custom": StringValue("val")},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "enum with namespace annotation",
+			src: `schema int;
+@namespace("org.example")
+enum Suit { HEARTS, DIAMONDS }`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Enum{
+							Name:      "Suit",
+							Namespace: "org.example",
+							Values: []*Ident{
+								{Pos: Pos{Line: 3, Column: 13}, Value: "HEARTS"},
+								{Pos: Pos{Line: 3, Column: 21}, Value: "DIAMONDS"},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "fixed with namespace annotation",
+			src: `schema int;
+@namespace("org.example")
+fixed MD5(16);`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Fixed{
+							Name:      "MD5",
+							Namespace: "org.example",
+							Size:      16,
 						},
 					},
 				},
