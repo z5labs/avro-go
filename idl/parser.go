@@ -36,10 +36,11 @@ const (
 
 // Field represents a field in a record.
 type Field struct {
-	Name      string
-	Aliases   []string
-	Type      Type
-	SortOrder SortOrder
+	Name       string
+	Aliases    []string
+	Type       Type
+	SortOrder  SortOrder
+	Properties map[string]Value
 
 	// A nil Value means no default was specified.
 	Default Value
@@ -85,6 +86,12 @@ type ObjectValue map[string]Value
 
 func (ObjectValue) val() {}
 
+// Annotation represents a parsed annotation from the Avro IDL (e.g. @namespace("org.example")).
+type Annotation struct {
+	Name  string
+	Value Value
+}
+
 // Type represents a type in the Avro IDL.
 type Type interface {
 	idl()
@@ -92,21 +99,23 @@ type Type interface {
 
 // Record represents a record in the Avro IDL.
 type Record struct {
-	Name      string
-	Namespace string
-	Aliases   []string
-	Fields    []*Field
+	Name       string
+	Namespace  string
+	Aliases    []string
+	Fields     []*Field
+	Properties map[string]Value
 }
 
 func (Record) idl() {}
 
 // Enum represents an enum in the Avro IDL.
 type Enum struct {
-	Name      string
-	Namespace string
-	Aliases   []string
-	Values    []*Ident
-	Default   *Ident
+	Name       string
+	Namespace  string
+	Aliases    []string
+	Values     []*Ident
+	Default    *Ident
+	Properties map[string]Value
 }
 
 func (Enum) idl() {}
@@ -134,10 +143,11 @@ func (Union) idl() {}
 
 // Fixed represents a fixed in the Avro IDL.
 type Fixed struct {
-	Name      string
-	Namespace string
-	Aliases   []string
-	Size      int
+	Name       string
+	Namespace  string
+	Aliases    []string
+	Size       int
+	Properties map[string]Value
 }
 
 func (Fixed) idl() {}
@@ -225,17 +235,29 @@ func (p *parser) unread(tok Token) {
 	p.pending = &tok
 }
 
-func (p *parser) expect(expected ...TokenType) (Token, error) {
-	var tok Token
-	var err error
-	var ok bool
+func (p *parser) read() (Token, error, bool) {
 	if p.pending != nil {
-		tok = *p.pending
+		tok := *p.pending
 		p.pending = nil
-		ok = true
-	} else {
-		tok, err, ok = p.next()
+		return tok, nil, true
 	}
+	return p.next()
+}
+
+func (p *parser) peek() (Token, bool) {
+	if p.pending != nil {
+		return *p.pending, true
+	}
+	tok, err, ok := p.next()
+	if err != nil || !ok {
+		return Token{}, false
+	}
+	p.pending = &tok
+	return tok, true
+}
+
+func (p *parser) expect(expected ...TokenType) (Token, error) {
+	tok, err, ok := p.read()
 	if err != nil {
 		return Token{}, err
 	}
@@ -254,6 +276,149 @@ func (p *parser) expect(expected ...TokenType) (Token, error) {
 }
 
 type parserAction[T any] func(p *parser, t T) (parserAction[T], error)
+
+func collectAnnotations(p *parser) ([]*Annotation, error) {
+	var annotations []*Annotation
+	for {
+		tok, ok := p.peek()
+		if !ok {
+			return annotations, nil
+		}
+		if tok.Type != TokenAnnotation {
+			return annotations, nil
+		}
+		// Consume the peeked annotation token.
+		p.pending = nil
+
+		// Read "("
+		open, err := p.expect(TokenSymbol)
+		if err != nil {
+			return nil, err
+		}
+		if !bytes.Equal(open.Value, []byte("(")) {
+			return nil, UnexpectedTokenError{
+				Expected: []TokenType{TokenSymbol},
+				Actual:   open,
+			}
+		}
+
+		// Read value
+		val, err := parseJSONValue(p)
+		if err != nil {
+			return nil, err
+		}
+
+		// Read ")"
+		close, err := p.expect(TokenSymbol)
+		if err != nil {
+			return nil, err
+		}
+		if !bytes.Equal(close.Value, []byte(")")) {
+			return nil, UnexpectedTokenError{
+				Expected: []TokenType{TokenSymbol},
+				Actual:   close,
+			}
+		}
+
+		annotations = append(annotations, &Annotation{
+			Name:  string(tok.Value),
+			Value: val,
+		})
+	}
+}
+
+func applyAnnotationsToRecord(rec *Record, annotations []*Annotation) {
+	for _, ann := range annotations {
+		switch ann.Name {
+		case "namespace":
+			if sv, ok := ann.Value.(StringValue); ok {
+				rec.Namespace = string(sv)
+			}
+		case "aliases":
+			rec.Aliases = extractStringSlice(ann.Value)
+		default:
+			if rec.Properties == nil {
+				rec.Properties = make(map[string]Value)
+			}
+			rec.Properties[ann.Name] = ann.Value
+		}
+	}
+}
+
+func applyAnnotationsToEnum(enum *Enum, annotations []*Annotation) {
+	for _, ann := range annotations {
+		switch ann.Name {
+		case "namespace":
+			if sv, ok := ann.Value.(StringValue); ok {
+				enum.Namespace = string(sv)
+			}
+		case "aliases":
+			enum.Aliases = extractStringSlice(ann.Value)
+		default:
+			if enum.Properties == nil {
+				enum.Properties = make(map[string]Value)
+			}
+			enum.Properties[ann.Name] = ann.Value
+		}
+	}
+}
+
+func applyAnnotationsToFixed(fixed *Fixed, annotations []*Annotation) {
+	for _, ann := range annotations {
+		switch ann.Name {
+		case "namespace":
+			if sv, ok := ann.Value.(StringValue); ok {
+				fixed.Namespace = string(sv)
+			}
+		case "aliases":
+			fixed.Aliases = extractStringSlice(ann.Value)
+		default:
+			if fixed.Properties == nil {
+				fixed.Properties = make(map[string]Value)
+			}
+			fixed.Properties[ann.Name] = ann.Value
+		}
+	}
+}
+
+func applyAnnotationsToField(field *Field, annotations []*Annotation) {
+	for _, ann := range annotations {
+		switch ann.Name {
+		case "order":
+			if sv, ok := ann.Value.(StringValue); ok {
+				switch string(sv) {
+				case "ascending":
+					field.SortOrder = SortOrderAsc
+				case "descending":
+					field.SortOrder = SortOrderDesc
+				case "ignore":
+					field.SortOrder = SortOrderIgnore
+				}
+			}
+		case "aliases":
+			field.Aliases = extractStringSlice(ann.Value)
+		default:
+			if field.Properties == nil {
+				field.Properties = make(map[string]Value)
+			}
+			field.Properties[ann.Name] = ann.Value
+		}
+	}
+}
+
+func extractStringSlice(v Value) []string {
+	arr, ok := v.(ArrayValue)
+	if !ok {
+		return nil
+	}
+	result := make([]string, 0, len(arr))
+	for _, elem := range arr {
+		if sv, ok := elem.(StringValue); ok {
+			result = append(result, string(sv))
+		}
+	}
+	return result
+}
 
 func parseFile(p *parser, file *File) (parserAction[*File], error) {
 	tok, err := p.expect(TokenIdentifier, TokenComment)
@@ -536,7 +701,12 @@ func parseUnionMemberOrClose(p *parser, u *Union) (parserAction[*Union], error) 
 }
 
 func parseType(p *parser, schema *Schema) (_ parserAction[*Schema], err error) {
-	tok, err, ok := p.next()
+	annotations, err := collectAnnotations(p)
+	if err != nil {
+		return nil, err
+	}
+
+	tok, err, ok := p.read()
 	if !ok {
 		return nil, nil
 	}
@@ -544,10 +714,10 @@ func parseType(p *parser, schema *Schema) (_ parserAction[*Schema], err error) {
 		return nil, err
 	}
 
-	return dispatchType(tok), nil
+	return dispatchType(tok, annotations), nil
 }
 
-func dispatchType(tok Token) parserAction[*Schema] {
+func dispatchType(tok Token, annotations []*Annotation) parserAction[*Schema] {
 	return func(p *parser, schema *Schema) (_ parserAction[*Schema], err error) {
 		switch tok.Type {
 		case TokenIdentifier:
@@ -557,6 +727,7 @@ func dispatchType(tok Token) parserAction[*Schema] {
 				if err != nil {
 					return nil, err
 				}
+				applyAnnotationsToEnum(enum, annotations)
 				schema.Types = append(schema.Types, enum)
 				return parseEnumOptionalDefault(enum), nil
 			case "fixed":
@@ -564,6 +735,7 @@ func dispatchType(tok Token) parserAction[*Schema] {
 				if err != nil {
 					return nil, err
 				}
+				applyAnnotationsToFixed(fixed, annotations)
 				schema.Types = append(schema.Types, fixed)
 				return parseType, nil
 			case "record":
@@ -571,6 +743,7 @@ func dispatchType(tok Token) parserAction[*Schema] {
 				if err != nil {
 					return nil, err
 				}
+				applyAnnotationsToRecord(rec, annotations)
 				schema.Types = append(schema.Types, rec)
 				return parseType, nil
 			default:
@@ -587,7 +760,7 @@ func dispatchType(tok Token) parserAction[*Schema] {
 
 func parseEnumOptionalDefault(enum *Enum) parserAction[*Schema] {
 	return func(p *parser, schema *Schema) (parserAction[*Schema], error) {
-		tok, err, ok := p.next()
+		tok, err, ok := p.read()
 		if !ok {
 			return nil, nil
 		}
@@ -605,7 +778,24 @@ func parseEnumOptionalDefault(enum *Enum) parserAction[*Schema] {
 			}
 			return parseSemicolon(parseType), nil
 		}
-		return dispatchType(tok), nil
+
+		// The token might be an annotation for the next type or a type keyword.
+		if tok.Type == TokenAnnotation {
+			p.unread(tok)
+			annotations, err := collectAnnotations(p)
+			if err != nil {
+				return nil, err
+			}
+			tok, err, ok = p.read()
+			if !ok {
+				return nil, nil
+			}
+			if err != nil {
+				return nil, err
+			}
+			return dispatchType(tok, annotations), nil
+		}
+		return dispatchType(tok, nil), nil
 	}
 }
 
@@ -791,40 +981,64 @@ func parseRecordOpenBrace(p *parser, rec *Record) (parserAction[*Record], error)
 }
 
 func parseRecordFieldType(p *parser, rec *Record) (parserAction[*Record], error) {
+	preTypeAnnotations, err := collectAnnotations(p)
+	if err != nil {
+		return nil, err
+	}
 	typ, err := parseTypeRef(p)
 	if err != nil {
 		return nil, err
 	}
 	field := &Field{Type: typ}
+	applyAnnotationsToField(field, preTypeAnnotations)
 	rec.Fields = append(rec.Fields, field)
 	return parseRecordFieldNullableOrName(field), nil
 }
 
 func parseRecordFieldNullableOrName(field *Field) parserAction[*Record] {
 	return func(p *parser, rec *Record) (parserAction[*Record], error) {
-		tok, err := p.expect(TokenIdentifier, TokenSymbol)
+		tok, err := p.expect(TokenIdentifier, TokenSymbol, TokenAnnotation)
 		if err != nil {
 			return nil, err
 		}
 		switch tok.Type {
+		case TokenAnnotation:
+			p.unread(tok)
+			annotations, err := collectAnnotations(p)
+			if err != nil {
+				return nil, err
+			}
+			applyAnnotationsToField(field, annotations)
+			return parseRecordFieldName(field), nil
 		case TokenIdentifier:
 			field.Name = string(tok.Value)
 			return parseRecordFieldDefaultOrSemicolon(field), nil
 		case TokenSymbol:
 			if !bytes.Equal(tok.Value, []byte("?")) {
 				return nil, UnexpectedTokenError{
-					Expected: []TokenType{TokenIdentifier, TokenSymbol},
+					Expected: []TokenType{TokenIdentifier, TokenSymbol, TokenAnnotation},
 					Actual:   tok,
 				}
 			}
 			field.Type = &Union{Types: []Type{Ident{Value: "null"}, field.Type}}
-			return parseRecordFieldName(field), nil
+			return parseRecordFieldAnnotationsOrName(field), nil
 		default:
 			return nil, UnexpectedTokenError{
-				Expected: []TokenType{TokenIdentifier, TokenSymbol},
+				Expected: []TokenType{TokenIdentifier, TokenSymbol, TokenAnnotation},
 				Actual:   tok,
 			}
 		}
+	}
+}
+
+func parseRecordFieldAnnotationsOrName(field *Field) parserAction[*Record] {
+	return func(p *parser, rec *Record) (parserAction[*Record], error) {
+		annotations, err := collectAnnotations(p)
+		if err != nil {
+			return nil, err
+		}
+		applyAnnotationsToField(field, annotations)
+		return parseRecordFieldName(field), nil
 	}
 }
 
@@ -1018,6 +1232,11 @@ func parseRecordFieldSemicolon(p *parser, rec *Record) (parserAction[*Record], e
 }
 
 func parseRecordFieldTypeOrClose(p *parser, rec *Record) (parserAction[*Record], error) {
+	preTypeAnnotations, err := collectAnnotations(p)
+	if err != nil {
+		return nil, err
+	}
+
 	tok, err := p.expect(TokenIdentifier, TokenSymbol)
 	if err != nil {
 		return nil, err
@@ -1042,6 +1261,7 @@ func parseRecordFieldTypeOrClose(p *parser, rec *Record) (parserAction[*Record],
 			typ = Ident{Pos: tok.Pos, Value: string(tok.Value)}
 		}
 		field := &Field{Type: typ}
+		applyAnnotationsToField(field, preTypeAnnotations)
 		rec.Fields = append(rec.Fields, field)
 		return parseRecordFieldNullableOrName(field), nil
 	case TokenSymbol:
