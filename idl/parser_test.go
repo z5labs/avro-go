@@ -520,8 +520,20 @@ enum Suit {
 						&Enum{
 							Name: "Suit",
 							Values: []*Ident{
-								{Pos: Pos{Line: 4, Column: 3}, Value: "HEARTS"},
-								{Pos: Pos{Line: 6, Column: 3}, Value: "DIAMONDS"},
+								{
+									Comments: []*Comment{
+										{Pos: Pos{Line: 3, Column: 3}, Text: "// Hearts suit"},
+									},
+									Pos:   Pos{Line: 4, Column: 3},
+									Value: "HEARTS",
+								},
+								{
+									Comments: []*Comment{
+										{Pos: Pos{Line: 5, Column: 3}, Text: "// Diamonds suit"},
+									},
+									Pos:   Pos{Line: 6, Column: 3},
+									Value: "DIAMONDS",
+								},
 							},
 						},
 					},

@@ -494,6 +494,9 @@ func printEnumValues(values []*Ident, idx int, next printerAction) printerAction
 			return next
 		}
 		v := values[idx]
+		for _, c := range v.Comments {
+			pr.writef("  %s\n", c.Text)
+		}
 		if v.Doc != "" {
 			pr.writef("  /** %s */\n", v.Doc)
 		}
