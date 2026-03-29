@@ -137,7 +137,13 @@ type BinaryReader struct {
 	in io.Reader
 }
 
-var errNegativeLength = errors.New("avro: negative length")
+var (
+	// ErrNegativeLength is returned when a decoded length value is negative.
+	ErrNegativeLength = errors.New("avro: negative length")
+
+	// ErrOverflow is returned when a varint or integer value exceeds the expected range.
+	ErrOverflow = errors.New("avro: varint overflow")
+)
 
 // ReadBool reads a boolean value from the reader. It returns true if the byte is non-zero.
 func (r *BinaryReader) ReadBool() (bool, error) {
@@ -155,6 +161,9 @@ func (r *BinaryReader) ReadInt() (int32, error) {
 	if err != nil {
 		return 0, err
 	}
+	if l < math.MinInt32 || l > math.MaxInt32 {
+		return 0, ErrOverflow
+	}
 	return int32(l), nil
 }
 
@@ -163,7 +172,7 @@ func (r *BinaryReader) ReadLong() (int64, error) {
 	var buf [1]byte
 	var unsigned uint64
 	var shift uint
-	for {
+	for i := 0; i < binary.MaxVarintLen64; i++ {
 		_, err := io.ReadFull(r.in, buf[:])
 		if err != nil {
 			return 0, err
@@ -171,11 +180,11 @@ func (r *BinaryReader) ReadLong() (int64, error) {
 		b := buf[0]
 		unsigned |= uint64(b&0x7f) << shift
 		if b&0x80 == 0 {
-			break
+			return int64(unsigned>>1) ^ -int64(unsigned&1), nil
 		}
 		shift += 7
 	}
-	return int64(unsigned>>1) ^ -int64(unsigned&1), nil
+	return 0, ErrOverflow
 }
 
 // ReadFloat reads a 32-bit floating-point number from the reader in little-endian format.
@@ -205,7 +214,10 @@ func (r *BinaryReader) ReadBytes() ([]byte, error) {
 		return nil, err
 	}
 	if n < 0 {
-		return nil, errNegativeLength
+		return nil, ErrNegativeLength
+	}
+	if n > int64(math.MaxInt32) {
+		return nil, ErrOverflow
 	}
 	if n == 0 {
 		return []byte{}, nil

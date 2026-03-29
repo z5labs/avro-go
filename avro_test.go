@@ -489,9 +489,10 @@ func TestReadInt(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
-		name     string
-		input    []byte
-		expected int32
+		name        string
+		input       []byte
+		expected    int32
+		expectedErr error
 	}{
 		{
 			name:     "zero",
@@ -533,6 +534,11 @@ func TestReadInt(t *testing.T) {
 			input:    []byte{0xff, 0xff, 0xff, 0xff, 0x0f},
 			expected: math.MinInt32,
 		},
+		{
+			name:        "overflow",
+			input:       []byte{0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01},
+			expectedErr: ErrOverflow,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -543,6 +549,10 @@ func TestReadInt(t *testing.T) {
 
 			got, err := r.ReadInt()
 
+			if tc.expectedErr != nil {
+				require.True(t, errors.Is(err, tc.expectedErr))
+				return
+			}
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, got)
 		})
@@ -553,9 +563,10 @@ func TestReadLong(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
-		name     string
-		input    []byte
-		expected int64
+		name        string
+		input       []byte
+		expected    int64
+		expectedErr error
 	}{
 		{
 			name:     "zero",
@@ -597,6 +608,11 @@ func TestReadLong(t *testing.T) {
 			input:    []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01},
 			expected: math.MinInt64,
 		},
+		{
+			name:        "overflow",
+			input:       []byte{0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01},
+			expectedErr: ErrOverflow,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -607,6 +623,10 @@ func TestReadLong(t *testing.T) {
 
 			got, err := r.ReadLong()
 
+			if tc.expectedErr != nil {
+				require.True(t, errors.Is(err, tc.expectedErr))
+				return
+			}
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, got)
 		})
@@ -742,7 +762,7 @@ func TestReadBytes(t *testing.T) {
 		{
 			name:        "negative length",
 			input:       []byte{0x01},
-			expectedErr: errNegativeLength,
+			expectedErr: ErrNegativeLength,
 		},
 	}
 
