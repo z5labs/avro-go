@@ -7,6 +7,7 @@ A library for working with [Apache Avro](https://avro.apache.org/) encoded data 
 | Package | Description |
 |---------|-------------|
 | `github.com/z5labs/avro-go` | Binary encoding and decoding of Avro primitives |
+| `github.com/z5labs/avro-go/canonical` | Parsing Canonical Form schema types with JSON marshaling |
 | `github.com/z5labs/avro-go/idl` | Avro IDL tokenizer, parser, and printer |
 
 ---
@@ -93,6 +94,49 @@ err := avro.UnmarshalSingleObject(r, &msg)
 ```go
 fp := avro.Fingerprint64([]byte(`"string"`))
 ```
+
+---
+
+## `canonical` — Parsing Canonical Form
+
+The `canonical` package provides typed Go representations of Avro schemas in [Parsing Canonical Form](https://avro.apache.org/docs/current/specification/#parsing-canonical-form-for-schemas). The top-level `Schema` type implements `json.Marshaler` and `json.Unmarshaler`, producing canonical JSON with correct field ordering and no extra whitespace.
+
+### Creating schemas
+
+Use the constructor functions to build schemas:
+
+```go
+s := canonical.RecordSchema(canonical.Record{
+    Name: "com.example.Person",
+    Fields: []canonical.Field{
+        {Name: "name", Type: canonical.PrimitiveSchema(canonical.String)},
+        {Name: "age", Type: canonical.PrimitiveSchema(canonical.Int)},
+    },
+})
+```
+
+Primitive constants are provided for all Avro primitives: `Null`, `Boolean`, `Int`, `Long`, `Float`, `Double`, `Bytes`, `String`.
+
+### Marshaling to canonical JSON
+
+```go
+b, err := json.Marshal(s)
+// {"name":"com.example.Person","type":"record","fields":[{"name":"name","type":"string"},{"name":"age","type":"int"}]}
+```
+
+### Unmarshaling from canonical JSON
+
+```go
+var s canonical.Schema
+err := json.Unmarshal(data, &s)
+
+r, ok := s.Record()
+if ok {
+    fmt.Println(r.Name) // com.example.Person
+}
+```
+
+Accessor methods (`Primitive()`, `Record()`, `Enum()`, `Array()`, `Map()`, `Union()`, `Fixed()`) provide type-safe access to the underlying concrete type.
 
 ---
 
