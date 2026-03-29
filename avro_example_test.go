@@ -28,7 +28,7 @@ func ExampleMarshalBinary() {
 		return
 	}
 
-	fmt.Println(hex.Dump(buf.Bytes()))
+	fmt.Print(hex.Dump(buf.Bytes()))
 
 	// Output: 00000000  06 61 62 63                                       |.abc|
 }

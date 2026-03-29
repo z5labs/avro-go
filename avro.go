@@ -62,10 +62,9 @@ func (w *BinaryWriter) WriteLong(l int64) error {
 
 // WriteFloat writes a 32-bit floating-point number to the writer in little-endian format.
 func (w *BinaryWriter) WriteFloat(f float32) error {
-	n := math.Float32bits(f)
-	buf := make([]byte, 4)
-	binary.LittleEndian.PutUint32(buf, n)
-	nw, err := w.out.Write(buf)
+	var buf [4]byte
+	binary.LittleEndian.PutUint32(buf[:], math.Float32bits(f))
+	nw, err := w.out.Write(buf[:])
 	if err != nil {
 		return err
 	}
@@ -77,10 +76,9 @@ func (w *BinaryWriter) WriteFloat(f float32) error {
 
 // WriteDouble writes a 64-bit floating-point number to the writer in little-endian format.
 func (w *BinaryWriter) WriteDouble(d float64) error {
-	n := math.Float64bits(d)
-	buf := make([]byte, 8)
-	binary.LittleEndian.PutUint64(buf, n)
-	nw, err := w.out.Write(buf)
+	var buf [8]byte
+	binary.LittleEndian.PutUint64(buf[:], math.Float64bits(d))
+	nw, err := w.out.Write(buf[:])
 	if err != nil {
 		return err
 	}
@@ -108,16 +106,15 @@ func (w *BinaryWriter) WriteBytes(b []byte) error {
 
 // WriteString writes a string to the writer. It first writes the length of the string as a long, followed by the UTF-8 bytes of the string.
 func (w *BinaryWriter) WriteString(s string) error {
-	b := []byte(s)
-	err := w.WriteLong(int64(len(b)))
+	err := w.WriteLong(int64(len(s)))
 	if err != nil {
 		return err
 	}
-	nw, err := w.out.Write(b)
+	nw, err := io.WriteString(w.out, s)
 	if err != nil {
 		return err
 	}
-	if nw != len(b) {
+	if nw != len(s) {
 		return io.ErrShortWrite
 	}
 	return nil

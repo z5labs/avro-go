@@ -33,7 +33,7 @@ go build ./...
 Provides Avro binary serialization via the `BinaryMarshaler` interface and `BinaryWriter`:
 
 - **`BinaryMarshaler`** interface: Types implement `MarshalAvroBinary(w *BinaryWriter) error`
-- **`BinaryWriter`**: Wraps `io.Writer` with typed write methods (`WriteBool`, `WriteInt`, `WriteLong`, `WriteFloat`, `WriteDouble`, `WriteBytes`, `WriteString`, `WriteNull`)
+- **`BinaryWriter`**: Wraps `io.Writer` with typed write methods (`WriteBool`, `WriteInt`, `WriteLong`, `WriteFloat`, `WriteDouble`, `WriteBytes`, `WriteString`)
 - **`MarshalBinary(w io.Writer, v BinaryMarshaler)`**: Top-level entry point
 
 ### `idl` Package
