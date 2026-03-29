@@ -19,8 +19,10 @@ import (
 // Ident represents an identifier in the Avro IDL, such as a schema name,
 // field name, or enum value name.
 type Ident struct {
-	Pos   Pos
-	Value string
+	Comments []*Comment
+	Doc      string
+	Pos      Pos
+	Value    string
 }
 
 func (Ident) idl() {}
@@ -362,6 +364,24 @@ func cleanDocComment(raw string) string {
 
 	// Join and trim
 	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+func collectComments(p *parser) ([]*Comment, error) {
+	var comments []*Comment
+	for {
+		tok, err, ok := p.peek()
+		if err != nil {
+			return nil, err
+		}
+		if !ok || tok.Type != TokenComment {
+			return comments, nil
+		}
+		p.pending = nil
+		comments = append(comments, &Comment{
+			Pos:  tok.Pos,
+			Text: string(tok.Value),
+		})
+	}
 }
 
 func collectDocComment(p *parser) (string, error) {
@@ -973,13 +993,23 @@ func parseEnumOpenBrace(p *parser, enum *Enum) (parserAction[*Enum], error) {
 }
 
 func parseEnumValue(p *parser, enum *Enum) (parserAction[*Enum], error) {
+	comments, err := collectComments(p)
+	if err != nil {
+		return nil, err
+	}
+	doc, err := collectDocComment(p)
+	if err != nil {
+		return nil, err
+	}
 	tok, err := p.expectIdentifier()
 	if err != nil {
 		return nil, err
 	}
 	enum.Values = append(enum.Values, &Ident{
-		Pos:   tok.Pos,
-		Value: string(tok.Value),
+		Comments: comments,
+		Doc:      doc,
+		Pos:      tok.Pos,
+		Value:    string(tok.Value),
 	})
 	return parseEnumValueSep, nil
 }
@@ -1003,6 +1033,14 @@ func parseEnumValueSep(p *parser, enum *Enum) (parserAction[*Enum], error) {
 }
 
 func parseEnumValueOrClose(p *parser, enum *Enum) (parserAction[*Enum], error) {
+	comments, err := collectComments(p)
+	if err != nil {
+		return nil, err
+	}
+	doc, err := collectDocComment(p)
+	if err != nil {
+		return nil, err
+	}
 	tok, err, ok := p.read()
 	if err != nil {
 		return nil, err
@@ -1024,8 +1062,10 @@ func parseEnumValueOrClose(p *parser, enum *Enum) (parserAction[*Enum], error) {
 				return nil, err
 			}
 			enum.Values = append(enum.Values, &Ident{
-				Pos:   identTok.Pos,
-				Value: string(identTok.Value),
+				Comments: comments,
+				Doc:      doc,
+				Pos:      identTok.Pos,
+				Value:    string(identTok.Value),
 			})
 			return parseEnumValueSep, nil
 		}
@@ -1043,8 +1083,10 @@ func parseEnumValueOrClose(p *parser, enum *Enum) (parserAction[*Enum], error) {
 	}
 
 	enum.Values = append(enum.Values, &Ident{
-		Pos:   tok.Pos,
-		Value: string(tok.Value),
+		Comments: comments,
+		Doc:      doc,
+		Pos:      tok.Pos,
+		Value:    string(tok.Value),
 	})
 	return parseEnumValueSep, nil
 }
