@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -101,9 +102,10 @@ func TestMarshalSingleObject_WriterError(t *testing.T) {
 	writeErr := errors.New("write failed")
 
 	testCases := []struct {
-		name string
-		w    writerFunc
-		obj  SingleObjectMarshaler
+		name        string
+		w           writerFunc
+		obj         SingleObjectMarshaler
+		expectedErr error
 	}{
 		{
 			name: "error writing magic bytes",
@@ -115,6 +117,19 @@ func TestMarshalSingleObject_WriterError(t *testing.T) {
 					return nil
 				},
 			},
+			expectedErr: writeErr,
+		},
+		{
+			name: "short write on magic bytes",
+			w: writerFunc(func(p []byte) (int, error) {
+				return 1, nil
+			}),
+			obj: singleObjectMarshalerStub{
+				marshal: func(w *BinaryWriter) error {
+					return nil
+				},
+			},
+			expectedErr: io.ErrShortWrite,
 		},
 		{
 			name: "error writing fingerprint",
@@ -133,6 +148,26 @@ func TestMarshalSingleObject_WriterError(t *testing.T) {
 					return nil
 				},
 			},
+			expectedErr: writeErr,
+		},
+		{
+			name: "short write on fingerprint",
+			w: func() writerFunc {
+				calls := 0
+				return writerFunc(func(p []byte) (int, error) {
+					calls++
+					if calls == 1 {
+						return len(p), nil
+					}
+					return 4, nil
+				})
+			}(),
+			obj: singleObjectMarshalerStub{
+				marshal: func(w *BinaryWriter) error {
+					return nil
+				},
+			},
+			expectedErr: io.ErrShortWrite,
 		},
 		{
 			name: "error from marshal",
@@ -144,6 +179,7 @@ func TestMarshalSingleObject_WriterError(t *testing.T) {
 					return writeErr
 				},
 			},
+			expectedErr: writeErr,
 		},
 	}
 
@@ -153,7 +189,7 @@ func TestMarshalSingleObject_WriterError(t *testing.T) {
 
 			err := MarshalSingleObject(tc.w, tc.obj)
 
-			require.ErrorIs(t, err, writeErr)
+			require.ErrorIs(t, err, tc.expectedErr)
 		})
 	}
 }

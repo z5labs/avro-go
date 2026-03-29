@@ -22,15 +22,21 @@ type SingleObjectMarshaler interface {
 // The format is: 2-byte magic header (0xC3 0x01), 8-byte schema fingerprint,
 // followed by the Avro binary encoded data.
 func MarshalSingleObject(w io.Writer, obj SingleObjectMarshaler) error {
-	_, err := w.Write([]byte{0xC3, 0x01})
+	n, err := w.Write([]byte{0xC3, 0x01})
 	if err != nil {
 		return err
 	}
+	if n != 2 {
+		return io.ErrShortWrite
+	}
 
 	fp := obj.Fingerprint()
-	_, err = w.Write(fp[:])
+	n, err = w.Write(fp[:])
 	if err != nil {
 		return err
+	}
+	if n != 8 {
+		return io.ErrShortWrite
 	}
 
 	return obj.MarshalAvroBinary(&BinaryWriter{out: w})
