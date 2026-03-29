@@ -9,11 +9,24 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"io"
 	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+type writerFunc func([]byte) (int, error)
+
+func (f writerFunc) Write(p []byte) (int, error) {
+	return f(p)
+}
+
+type readerFunc func([]byte) (int, error)
+
+func (f readerFunc) Read(p []byte) (int, error) {
+	return f(p)
+}
 
 type binaryMarshalerFunc func(w *BinaryWriter) error
 
@@ -137,6 +150,34 @@ func TestWriteBool(t *testing.T) {
 	}
 }
 
+func TestWriteBool_error(t *testing.T) {
+	t.Parallel()
+
+	t.Run("write error", func(t *testing.T) {
+		t.Parallel()
+
+		w := &BinaryWriter{out: writerFunc(func(p []byte) (int, error) {
+			return 0, io.ErrClosedPipe
+		})}
+
+		err := w.WriteBool(true)
+
+		require.ErrorIs(t, err, io.ErrClosedPipe)
+	})
+
+	t.Run("short write", func(t *testing.T) {
+		t.Parallel()
+
+		w := &BinaryWriter{out: writerFunc(func(p []byte) (int, error) {
+			return 0, nil
+		})}
+
+		err := w.WriteBool(true)
+
+		require.ErrorIs(t, err, io.ErrShortWrite)
+	})
+}
+
 func TestWriteInt(t *testing.T) {
 	t.Parallel()
 
@@ -200,6 +241,22 @@ func TestWriteInt(t *testing.T) {
 			require.Equal(t, tc.expected, buf.Bytes())
 		})
 	}
+}
+
+func TestWriteInt_error(t *testing.T) {
+	t.Parallel()
+
+	t.Run("write error", func(t *testing.T) {
+		t.Parallel()
+
+		w := &BinaryWriter{out: writerFunc(func(p []byte) (int, error) {
+			return 0, io.ErrClosedPipe
+		})}
+
+		err := w.WriteInt(1)
+
+		require.ErrorIs(t, err, io.ErrClosedPipe)
+	})
 }
 
 func TestWriteLong(t *testing.T) {
@@ -267,6 +324,34 @@ func TestWriteLong(t *testing.T) {
 	}
 }
 
+func TestWriteLong_error(t *testing.T) {
+	t.Parallel()
+
+	t.Run("write error", func(t *testing.T) {
+		t.Parallel()
+
+		w := &BinaryWriter{out: writerFunc(func(p []byte) (int, error) {
+			return 0, io.ErrClosedPipe
+		})}
+
+		err := w.WriteLong(1)
+
+		require.ErrorIs(t, err, io.ErrClosedPipe)
+	})
+
+	t.Run("short write", func(t *testing.T) {
+		t.Parallel()
+
+		w := &BinaryWriter{out: writerFunc(func(p []byte) (int, error) {
+			return 0, nil
+		})}
+
+		err := w.WriteLong(1)
+
+		require.ErrorIs(t, err, io.ErrShortWrite)
+	})
+}
+
 func TestWriteFloat(t *testing.T) {
 	t.Parallel()
 
@@ -317,6 +402,34 @@ func TestWriteFloat(t *testing.T) {
 			require.Equal(t, tc.expected, buf.Bytes())
 		})
 	}
+}
+
+func TestWriteFloat_error(t *testing.T) {
+	t.Parallel()
+
+	t.Run("write error", func(t *testing.T) {
+		t.Parallel()
+
+		w := &BinaryWriter{out: writerFunc(func(p []byte) (int, error) {
+			return 0, io.ErrClosedPipe
+		})}
+
+		err := w.WriteFloat(3.14)
+
+		require.ErrorIs(t, err, io.ErrClosedPipe)
+	})
+
+	t.Run("short write", func(t *testing.T) {
+		t.Parallel()
+
+		w := &BinaryWriter{out: writerFunc(func(p []byte) (int, error) {
+			return 0, nil
+		})}
+
+		err := w.WriteFloat(3.14)
+
+		require.ErrorIs(t, err, io.ErrShortWrite)
+	})
 }
 
 func TestWriteDouble(t *testing.T) {
@@ -371,6 +484,34 @@ func TestWriteDouble(t *testing.T) {
 	}
 }
 
+func TestWriteDouble_error(t *testing.T) {
+	t.Parallel()
+
+	t.Run("write error", func(t *testing.T) {
+		t.Parallel()
+
+		w := &BinaryWriter{out: writerFunc(func(p []byte) (int, error) {
+			return 0, io.ErrClosedPipe
+		})}
+
+		err := w.WriteDouble(3.14)
+
+		require.ErrorIs(t, err, io.ErrClosedPipe)
+	})
+
+	t.Run("short write", func(t *testing.T) {
+		t.Parallel()
+
+		w := &BinaryWriter{out: writerFunc(func(p []byte) (int, error) {
+			return 0, nil
+		})}
+
+		err := w.WriteDouble(3.14)
+
+		require.ErrorIs(t, err, io.ErrShortWrite)
+	})
+}
+
 func TestWriteBytes(t *testing.T) {
 	t.Parallel()
 
@@ -409,6 +550,56 @@ func TestWriteBytes(t *testing.T) {
 			require.Equal(t, tc.expected, buf.Bytes())
 		})
 	}
+}
+
+func TestWriteBytes_error(t *testing.T) {
+	t.Parallel()
+
+	t.Run("length write error", func(t *testing.T) {
+		t.Parallel()
+
+		w := &BinaryWriter{out: writerFunc(func(p []byte) (int, error) {
+			return 0, io.ErrClosedPipe
+		})}
+
+		err := w.WriteBytes([]byte{0x01})
+
+		require.ErrorIs(t, err, io.ErrClosedPipe)
+	})
+
+	t.Run("data write error", func(t *testing.T) {
+		t.Parallel()
+
+		calls := 0
+		w := &BinaryWriter{out: writerFunc(func(p []byte) (int, error) {
+			calls++
+			if calls == 1 {
+				return len(p), nil
+			}
+			return 0, io.ErrClosedPipe
+		})}
+
+		err := w.WriteBytes([]byte{0x01})
+
+		require.ErrorIs(t, err, io.ErrClosedPipe)
+	})
+
+	t.Run("data short write", func(t *testing.T) {
+		t.Parallel()
+
+		calls := 0
+		w := &BinaryWriter{out: writerFunc(func(p []byte) (int, error) {
+			calls++
+			if calls == 1 {
+				return len(p), nil
+			}
+			return 0, nil
+		})}
+
+		err := w.WriteBytes([]byte{0x01})
+
+		require.ErrorIs(t, err, io.ErrShortWrite)
+	})
 }
 
 func TestWriteString(t *testing.T) {
@@ -451,6 +642,56 @@ func TestWriteString(t *testing.T) {
 	}
 }
 
+func TestWriteString_error(t *testing.T) {
+	t.Parallel()
+
+	t.Run("length write error", func(t *testing.T) {
+		t.Parallel()
+
+		w := &BinaryWriter{out: writerFunc(func(p []byte) (int, error) {
+			return 0, io.ErrClosedPipe
+		})}
+
+		err := w.WriteString("abc")
+
+		require.ErrorIs(t, err, io.ErrClosedPipe)
+	})
+
+	t.Run("data write error", func(t *testing.T) {
+		t.Parallel()
+
+		calls := 0
+		w := &BinaryWriter{out: writerFunc(func(p []byte) (int, error) {
+			calls++
+			if calls == 1 {
+				return len(p), nil
+			}
+			return 0, io.ErrClosedPipe
+		})}
+
+		err := w.WriteString("abc")
+
+		require.ErrorIs(t, err, io.ErrClosedPipe)
+	})
+
+	t.Run("data short write", func(t *testing.T) {
+		t.Parallel()
+
+		calls := 0
+		w := &BinaryWriter{out: writerFunc(func(p []byte) (int, error) {
+			calls++
+			if calls == 1 {
+				return len(p), nil
+			}
+			return 0, nil
+		})}
+
+		err := w.WriteString("abc")
+
+		require.ErrorIs(t, err, io.ErrShortWrite)
+	})
+}
+
 func TestReadBool(t *testing.T) {
 	t.Parallel()
 
@@ -483,6 +724,22 @@ func TestReadBool(t *testing.T) {
 			require.Equal(t, tc.expected, got)
 		})
 	}
+}
+
+func TestReadBool_error(t *testing.T) {
+	t.Parallel()
+
+	t.Run("read error", func(t *testing.T) {
+		t.Parallel()
+
+		r := &BinaryReader{in: readerFunc(func(p []byte) (int, error) {
+			return 0, io.ErrClosedPipe
+		})}
+
+		_, err := r.ReadBool()
+
+		require.ErrorIs(t, err, io.ErrClosedPipe)
+	})
 }
 
 func TestReadInt(t *testing.T) {
@@ -559,6 +816,22 @@ func TestReadInt(t *testing.T) {
 	}
 }
 
+func TestReadInt_error(t *testing.T) {
+	t.Parallel()
+
+	t.Run("read error", func(t *testing.T) {
+		t.Parallel()
+
+		r := &BinaryReader{in: readerFunc(func(p []byte) (int, error) {
+			return 0, io.ErrClosedPipe
+		})}
+
+		_, err := r.ReadInt()
+
+		require.ErrorIs(t, err, io.ErrClosedPipe)
+	})
+}
+
 func TestReadLong(t *testing.T) {
 	t.Parallel()
 
@@ -633,6 +906,40 @@ func TestReadLong(t *testing.T) {
 	}
 }
 
+func TestReadLong_error(t *testing.T) {
+	t.Parallel()
+
+	t.Run("read error on first byte", func(t *testing.T) {
+		t.Parallel()
+
+		r := &BinaryReader{in: readerFunc(func(p []byte) (int, error) {
+			return 0, io.ErrClosedPipe
+		})}
+
+		_, err := r.ReadLong()
+
+		require.ErrorIs(t, err, io.ErrClosedPipe)
+	})
+
+	t.Run("read error on continuation byte", func(t *testing.T) {
+		t.Parallel()
+
+		calls := 0
+		r := &BinaryReader{in: readerFunc(func(p []byte) (int, error) {
+			calls++
+			if calls == 1 {
+				p[0] = 0x80
+				return 1, nil
+			}
+			return 0, io.ErrClosedPipe
+		})}
+
+		_, err := r.ReadLong()
+
+		require.ErrorIs(t, err, io.ErrClosedPipe)
+	})
+}
+
 func TestReadFloat(t *testing.T) {
 	t.Parallel()
 
@@ -682,6 +989,22 @@ func TestReadFloat(t *testing.T) {
 			require.Equal(t, tc.expected, got)
 		})
 	}
+}
+
+func TestReadFloat_error(t *testing.T) {
+	t.Parallel()
+
+	t.Run("read error", func(t *testing.T) {
+		t.Parallel()
+
+		r := &BinaryReader{in: readerFunc(func(p []byte) (int, error) {
+			return 0, io.ErrClosedPipe
+		})}
+
+		_, err := r.ReadFloat()
+
+		require.ErrorIs(t, err, io.ErrClosedPipe)
+	})
 }
 
 func TestReadDouble(t *testing.T) {
@@ -735,6 +1058,22 @@ func TestReadDouble(t *testing.T) {
 	}
 }
 
+func TestReadDouble_error(t *testing.T) {
+	t.Parallel()
+
+	t.Run("read error", func(t *testing.T) {
+		t.Parallel()
+
+		r := &BinaryReader{in: readerFunc(func(p []byte) (int, error) {
+			return 0, io.ErrClosedPipe
+		})}
+
+		_, err := r.ReadDouble()
+
+		require.ErrorIs(t, err, io.ErrClosedPipe)
+	})
+}
+
 func TestReadBytes(t *testing.T) {
 	t.Parallel()
 
@@ -764,6 +1103,11 @@ func TestReadBytes(t *testing.T) {
 			input:       []byte{0x01},
 			expectedErr: ErrNegativeLength,
 		},
+		{
+			name:        "overflow length",
+			input:       []byte{0x80, 0x80, 0x80, 0x80, 0x10},
+			expectedErr: ErrOverflow,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -775,13 +1119,47 @@ func TestReadBytes(t *testing.T) {
 			got, err := r.ReadBytes()
 
 			if tc.expectedErr != nil {
-				require.True(t, errors.Is(err, tc.expectedErr))
+				require.ErrorIs(t, err, tc.expectedErr)
 				return
 			}
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, got)
 		})
 	}
+}
+
+func TestReadBytes_error(t *testing.T) {
+	t.Parallel()
+
+	t.Run("length read error", func(t *testing.T) {
+		t.Parallel()
+
+		r := &BinaryReader{in: readerFunc(func(p []byte) (int, error) {
+			return 0, io.ErrClosedPipe
+		})}
+
+		_, err := r.ReadBytes()
+
+		require.ErrorIs(t, err, io.ErrClosedPipe)
+	})
+
+	t.Run("data read error", func(t *testing.T) {
+		t.Parallel()
+
+		calls := 0
+		r := &BinaryReader{in: readerFunc(func(p []byte) (int, error) {
+			calls++
+			if calls == 1 {
+				p[0] = 0x02
+				return 1, nil
+			}
+			return 0, io.ErrClosedPipe
+		})}
+
+		_, err := r.ReadBytes()
+
+		require.ErrorIs(t, err, io.ErrClosedPipe)
+	})
 }
 
 func TestReadString(t *testing.T) {
@@ -821,4 +1199,20 @@ func TestReadString(t *testing.T) {
 			require.Equal(t, tc.expected, got)
 		})
 	}
+}
+
+func TestReadString_error(t *testing.T) {
+	t.Parallel()
+
+	t.Run("read error", func(t *testing.T) {
+		t.Parallel()
+
+		r := &BinaryReader{in: readerFunc(func(p []byte) (int, error) {
+			return 0, io.ErrClosedPipe
+		})}
+
+		_, err := r.ReadString()
+
+		require.ErrorIs(t, err, io.ErrClosedPipe)
+	})
 }
