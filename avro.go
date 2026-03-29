@@ -25,11 +25,6 @@ type BinaryWriter struct {
 	out io.Writer
 }
 
-func (w *BinaryWriter) WriteNull() error {
-	// TODO: the spec is confusing for this
-	return nil
-}
-
 // WriteBool writes a boolean value to the writer. It writes 1 for true and 0 for false.
 func (w *BinaryWriter) WriteBool(b bool) error {
 	var value byte

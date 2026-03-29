@@ -29,13 +29,6 @@ func TestMarshalBinary(t *testing.T) {
 		expected []byte
 	}{
 		{
-			name: "write null",
-			v: binaryMarshalerFunc(func(w *BinaryWriter) error {
-				return w.WriteNull()
-			}),
-			expected: nil,
-		},
-		{
 			name: "write bool true",
 			v: binaryMarshalerFunc(func(w *BinaryWriter) error {
 				return w.WriteBool(true)
@@ -63,18 +56,6 @@ func TestMarshalBinary(t *testing.T) {
 			require.Equal(t, tc.expected, buf.Bytes())
 		})
 	}
-}
-
-func TestWriteNull(t *testing.T) {
-	t.Parallel()
-
-	var buf bytes.Buffer
-	w := &BinaryWriter{out: &buf}
-
-	err := w.WriteNull()
-
-	require.NoError(t, err)
-	require.Empty(t, buf.Bytes())
 }
 
 func TestWriteBool(t *testing.T) {
