@@ -106,6 +106,18 @@ func (w *BinaryWriter) WriteBytes(b []byte) error {
 	return nil
 }
 
+// WriteFixed writes a fixed number of bytes to the writer. Unlike WriteBytes, it does not write a length prefix.
+func (w *BinaryWriter) WriteFixed(b []byte) error {
+	nw, err := w.out.Write(b)
+	if err != nil {
+		return err
+	}
+	if nw != len(b) {
+		return io.ErrShortWrite
+	}
+	return nil
+}
+
 // WriteString writes a string to the writer. It first writes the length of the string as a long, followed by the UTF-8 bytes of the string.
 func (w *BinaryWriter) WriteString(s string) error {
 	err := w.WriteLong(int64(len(s)))
@@ -224,6 +236,16 @@ func (r *BinaryReader) ReadBytes() ([]byte, error) {
 	}
 	buf := make([]byte, n)
 	_, err = io.ReadFull(r.in, buf)
+	if err != nil {
+		return nil, err
+	}
+	return buf, nil
+}
+
+// ReadFixed reads exactly size bytes from the reader. Unlike ReadBytes, it does not read a length prefix.
+func (r *BinaryReader) ReadFixed(size int) ([]byte, error) {
+	buf := make([]byte, size)
+	_, err := io.ReadFull(r.in, buf)
 	if err != nil {
 		return nil, err
 	}
