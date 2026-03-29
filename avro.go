@@ -48,13 +48,20 @@ func (w *BinaryWriter) WriteBool(b bool) error {
 
 // WriteInt writes a 32-bit integer to the writer using variable-length zigzag encoding.
 func (w *BinaryWriter) WriteInt(i int32) error {
-	// TODO: variable length zigzag encoding
-	return nil
+	return w.WriteLong(int64(i))
 }
 
 // WriteLong writes a 64-bit integer to the writer using variable-length zigzag encoding.
 func (w *BinaryWriter) WriteLong(l int64) error {
-	// TODO: variable length zigzag encoding
+	var buf [binary.MaxVarintLen64]byte
+	n := binary.PutVarint(buf[:], l)
+	nw, err := w.out.Write(buf[:n])
+	if err != nil {
+		return err
+	}
+	if nw != n {
+		return io.ErrShortWrite
+	}
 	return nil
 }
 
