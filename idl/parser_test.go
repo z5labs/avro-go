@@ -473,6 +473,84 @@ enum Suit { HEARTS }`,
 			},
 		},
 		{
+			name: "schema with enum type and doc comments on values",
+			src: `schema int;
+enum Suit {
+  /** Hearts suit */
+  HEARTS,
+  /** Diamonds suit */
+  DIAMONDS,
+  /** Clubs suit */
+  CLUBS,
+  /** Spades suit */
+  SPADES
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Enum{
+							Name: "Suit",
+							Values: []*Ident{
+								{Pos: Pos{Line: 4, Column: 3}, Value: "HEARTS"},
+								{Pos: Pos{Line: 6, Column: 3}, Value: "DIAMONDS"},
+								{Pos: Pos{Line: 8, Column: 3}, Value: "CLUBS"},
+								{Pos: Pos{Line: 10, Column: 3}, Value: "SPADES"},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "schema with enum type and line comments on values",
+			src: `schema int;
+enum Suit {
+  // Hearts suit
+  HEARTS,
+  // Diamonds suit
+  DIAMONDS
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Enum{
+							Name: "Suit",
+							Values: []*Ident{
+								{Pos: Pos{Line: 4, Column: 3}, Value: "HEARTS"},
+								{Pos: Pos{Line: 6, Column: 3}, Value: "DIAMONDS"},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "schema with enum type and doc comment before first value",
+			src: `schema int;
+enum Suit {
+  /** First value */
+  HEARTS
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Enum{
+							Name: "Suit",
+							Values: []*Ident{
+								{Pos: Pos{Line: 4, Column: 3}, Value: "HEARTS"},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "schema with multiple enum types",
 			src: `schema int;
 enum Suit { HEARTS }

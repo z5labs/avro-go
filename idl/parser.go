@@ -364,6 +364,19 @@ func cleanDocComment(raw string) string {
 	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
 
+func skipComments(p *parser) error {
+	for {
+		tok, err, ok := p.peek()
+		if err != nil {
+			return err
+		}
+		if !ok || (tok.Type != TokenComment && tok.Type != TokenDocComment) {
+			return nil
+		}
+		p.pending = nil
+	}
+}
+
 func collectDocComment(p *parser) (string, error) {
 	tok, err, ok := p.peek()
 	if err != nil {
@@ -973,6 +986,9 @@ func parseEnumOpenBrace(p *parser, enum *Enum) (parserAction[*Enum], error) {
 }
 
 func parseEnumValue(p *parser, enum *Enum) (parserAction[*Enum], error) {
+	if err := skipComments(p); err != nil {
+		return nil, err
+	}
 	tok, err := p.expectIdentifier()
 	if err != nil {
 		return nil, err
@@ -1003,6 +1019,9 @@ func parseEnumValueSep(p *parser, enum *Enum) (parserAction[*Enum], error) {
 }
 
 func parseEnumValueOrClose(p *parser, enum *Enum) (parserAction[*Enum], error) {
+	if err := skipComments(p); err != nil {
+		return nil, err
+	}
 	tok, err, ok := p.read()
 	if err != nil {
 		return nil, err
