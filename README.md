@@ -138,6 +138,28 @@ if ok {
 
 Accessor methods (`Primitive()`, `Record()`, `Enum()`, `Array()`, `Map()`, `Union()`, `Fixed()`) provide type-safe access to the underlying concrete type.
 
+### Converting from IDL
+
+`SchemaFrom` converts a parsed `idl.Schema` into canonical form:
+
+```go
+f, err := idl.Parse(strings.NewReader(`
+    namespace com.example;
+    schema int;
+    record Person {
+        string name;
+        int    age;
+    }
+`))
+
+schemas, err := canonical.SchemaFrom(f.Schema)
+
+b, err := json.Marshal(schemas[1])
+// {"name":"com.example.Person","type":"record","fields":[{"name":"name","type":"string"},{"name":"age","type":"int"}]}
+```
+
+The function returns a slice because an IDL schema can define multiple named types. Namespace qualification, type references, and all structural schema information are preserved; non-canonical attributes (doc comments, aliases, defaults) are stripped.
+
 ---
 
 ## `idl` — Avro IDL
