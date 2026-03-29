@@ -493,10 +493,10 @@ enum Suit {
 						&Enum{
 							Name: "Suit",
 							Values: []*Ident{
-								{Pos: Pos{Line: 4, Column: 3}, Value: "HEARTS"},
-								{Pos: Pos{Line: 6, Column: 3}, Value: "DIAMONDS"},
-								{Pos: Pos{Line: 8, Column: 3}, Value: "CLUBS"},
-								{Pos: Pos{Line: 10, Column: 3}, Value: "SPADES"},
+								{Doc: "Hearts suit", Pos: Pos{Line: 4, Column: 3}, Value: "HEARTS"},
+								{Doc: "Diamonds suit", Pos: Pos{Line: 6, Column: 3}, Value: "DIAMONDS"},
+								{Doc: "Clubs suit", Pos: Pos{Line: 8, Column: 3}, Value: "CLUBS"},
+								{Doc: "Spades suit", Pos: Pos{Line: 10, Column: 3}, Value: "SPADES"},
 							},
 						},
 					},
@@ -543,7 +543,7 @@ enum Suit {
 						&Enum{
 							Name: "Suit",
 							Values: []*Ident{
-								{Pos: Pos{Line: 4, Column: 3}, Value: "HEARTS"},
+								{Doc: "First value", Pos: Pos{Line: 4, Column: 3}, Value: "HEARTS"},
 							},
 						},
 					},

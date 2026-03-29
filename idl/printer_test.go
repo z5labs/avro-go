@@ -304,6 +304,34 @@ enum Suit {
 `,
 		},
 		{
+			name: "enum with doc comments on values",
+			input: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Enum{
+							Name: "Suit",
+							Values: []*Ident{
+								{Doc: "Hearts suit", Value: "HEARTS"},
+								{Doc: "Diamonds suit", Value: "DIAMONDS"},
+								{Value: "CLUBS"},
+							},
+						},
+					},
+				},
+			},
+			expected: `schema int;
+enum Suit {
+  /** Hearts suit */
+  HEARTS,
+  /** Diamonds suit */
+  DIAMONDS,
+  CLUBS
+}
+`,
+		},
+		{
 			name: "nullable union schema shorthand",
 			input: &File{
 				Schema: &Schema{

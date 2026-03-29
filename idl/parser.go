@@ -19,6 +19,7 @@ import (
 // Ident represents an identifier in the Avro IDL, such as a schema name,
 // field name, or enum value name.
 type Ident struct {
+	Doc   string
 	Pos   Pos
 	Value string
 }
@@ -370,7 +371,7 @@ func skipComments(p *parser) error {
 		if err != nil {
 			return err
 		}
-		if !ok || (tok.Type != TokenComment && tok.Type != TokenDocComment) {
+		if !ok || tok.Type != TokenComment {
 			return nil
 		}
 		p.pending = nil
@@ -989,11 +990,16 @@ func parseEnumValue(p *parser, enum *Enum) (parserAction[*Enum], error) {
 	if err := skipComments(p); err != nil {
 		return nil, err
 	}
+	doc, err := collectDocComment(p)
+	if err != nil {
+		return nil, err
+	}
 	tok, err := p.expectIdentifier()
 	if err != nil {
 		return nil, err
 	}
 	enum.Values = append(enum.Values, &Ident{
+		Doc:   doc,
 		Pos:   tok.Pos,
 		Value: string(tok.Value),
 	})
@@ -1022,6 +1028,10 @@ func parseEnumValueOrClose(p *parser, enum *Enum) (parserAction[*Enum], error) {
 	if err := skipComments(p); err != nil {
 		return nil, err
 	}
+	doc, err := collectDocComment(p)
+	if err != nil {
+		return nil, err
+	}
 	tok, err, ok := p.read()
 	if err != nil {
 		return nil, err
@@ -1043,6 +1053,7 @@ func parseEnumValueOrClose(p *parser, enum *Enum) (parserAction[*Enum], error) {
 				return nil, err
 			}
 			enum.Values = append(enum.Values, &Ident{
+				Doc:   doc,
 				Pos:   identTok.Pos,
 				Value: string(identTok.Value),
 			})
@@ -1062,6 +1073,7 @@ func parseEnumValueOrClose(p *parser, enum *Enum) (parserAction[*Enum], error) {
 	}
 
 	enum.Values = append(enum.Values, &Ident{
+		Doc:   doc,
 		Pos:   tok.Pos,
 		Value: string(tok.Value),
 	})
