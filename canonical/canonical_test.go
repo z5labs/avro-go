@@ -160,6 +160,32 @@ func TestSchema_MarshalJSON(t *testing.T) {
 			}),
 			expected: `{"name":"com.example.MD5","type":"fixed","size":16}`,
 		},
+		{
+			name: "record name with special characters",
+			schema: RecordSchema(Record{
+				Name: "com.example.\"Quoted\\Name\"\n",
+				Fields: []Field{
+					{Name: "field\twith\ttabs", Type: PrimitiveSchema(String)},
+				},
+			}),
+			expected: `{"name":"com.example.\"Quoted\\Name\"\n","type":"record","fields":[{"name":"field\twith\ttabs","type":"string"}]}`,
+		},
+		{
+			name: "enum symbols with backslash and quotes",
+			schema: EnumSchema(Enum{
+				Name:    "com.example.Escaped",
+				Symbols: []string{"A\"B", "C\\D"},
+			}),
+			expected: `{"name":"com.example.Escaped","type":"enum","symbols":["A\"B","C\\D"]}`,
+		},
+		{
+			name: "fixed name with control characters",
+			schema: FixedSchema(Fixed{
+				Name: "com.example.\b\f",
+				Size: 4,
+			}),
+			expected: `{"name":"com.example.\b\f","type":"fixed","size":4}`,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -514,6 +540,94 @@ func TestSchema_Accessors(t *testing.T) {
 			t.Parallel()
 
 			tc.check(t, tc.schema)
+		})
+	}
+}
+
+func TestSchema_UnmarshalJSON_Errors(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name        string
+		input       string
+		expectedErr string
+	}{
+		{
+			name:        "unexpected token",
+			input:       "123",
+			expectedErr: "canonical: unexpected JSON token",
+		},
+		{
+			name:        "object missing type field",
+			input:       `{"name":"com.example.Test"}`,
+			expectedErr: `canonical: object schema missing "type" field`,
+		},
+		{
+			name:        "unknown type",
+			input:       `{"type":"unknown"}`,
+			expectedErr: `canonical: unknown type "unknown"`,
+		},
+		{
+			name:        "record missing name",
+			input:       `{"type":"record","fields":[]}`,
+			expectedErr: "canonical: record: missing name",
+		},
+		{
+			name:        "record missing fields",
+			input:       `{"type":"record","name":"com.example.Test"}`,
+			expectedErr: "canonical: record: missing fields",
+		},
+		{
+			name:        "record field missing name",
+			input:       `{"type":"record","name":"com.example.Test","fields":[{"type":"string"}]}`,
+			expectedErr: "canonical: record field: missing name",
+		},
+		{
+			name:        "record field missing type",
+			input:       `{"type":"record","name":"com.example.Test","fields":[{"name":"x"}]}`,
+			expectedErr: "canonical: record field: missing type",
+		},
+		{
+			name:        "enum missing name",
+			input:       `{"type":"enum","symbols":["A"]}`,
+			expectedErr: "canonical: enum: missing name",
+		},
+		{
+			name:        "enum missing symbols",
+			input:       `{"type":"enum","name":"com.example.E"}`,
+			expectedErr: "canonical: enum: missing symbols",
+		},
+		{
+			name:        "array missing items",
+			input:       `{"type":"array"}`,
+			expectedErr: "canonical: array: missing items",
+		},
+		{
+			name:        "map missing values",
+			input:       `{"type":"map"}`,
+			expectedErr: "canonical: map: missing values",
+		},
+		{
+			name:        "fixed missing name",
+			input:       `{"type":"fixed","size":16}`,
+			expectedErr: "canonical: fixed: missing name",
+		},
+		{
+			name:        "fixed missing size",
+			input:       `{"type":"fixed","name":"com.example.Hash"}`,
+			expectedErr: "canonical: fixed: missing size",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var s Schema
+			err := json.Unmarshal([]byte(tc.input), &s)
+
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tc.expectedErr)
 		})
 	}
 }

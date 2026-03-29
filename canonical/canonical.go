@@ -268,6 +268,10 @@ func writeQuotedString(buf *bytes.Buffer, s string) {
 			buf.WriteString(`\"`)
 		case '\\':
 			buf.WriteString(`\\`)
+		case '\b':
+			buf.WriteString(`\b`)
+		case '\f':
+			buf.WriteString(`\f`)
 		case '\n':
 			buf.WriteString(`\n`)
 		case '\r':
@@ -275,7 +279,11 @@ func writeQuotedString(buf *bytes.Buffer, s string) {
 		case '\t':
 			buf.WriteString(`\t`)
 		default:
-			buf.WriteRune(c)
+			if c < 0x20 {
+				fmt.Fprintf(buf, `\u%04x`, c)
+			} else {
+				buf.WriteRune(c)
+			}
 		}
 	}
 	buf.WriteByte('"')
@@ -350,30 +358,46 @@ func (s *Schema) unmarshalObject(data []byte) error {
 }
 
 func (s *Schema) unmarshalRecord(obj map[string]json.RawMessage) error {
+	rawName, ok := obj["name"]
+	if !ok {
+		return fmt.Errorf("canonical: record: missing name")
+	}
 	var name string
-	if err := json.Unmarshal(obj["name"], &name); err != nil {
+	if err := json.Unmarshal(rawName, &name); err != nil {
 		return fmt.Errorf("canonical: record: invalid name: %w", err)
 	}
 
-	var rawFields []json.RawMessage
-	if err := json.Unmarshal(obj["fields"], &rawFields); err != nil {
+	rawFields, ok := obj["fields"]
+	if !ok {
+		return fmt.Errorf("canonical: record: missing fields")
+	}
+	var rawFieldList []json.RawMessage
+	if err := json.Unmarshal(rawFields, &rawFieldList); err != nil {
 		return fmt.Errorf("canonical: record: invalid fields: %w", err)
 	}
 
-	fields := make([]Field, len(rawFields))
-	for i, rf := range rawFields {
+	fields := make([]Field, len(rawFieldList))
+	for i, rf := range rawFieldList {
 		var fieldObj map[string]json.RawMessage
 		if err := json.Unmarshal(rf, &fieldObj); err != nil {
 			return fmt.Errorf("canonical: record field: %w", err)
 		}
 
+		nameRaw, ok := fieldObj["name"]
+		if !ok {
+			return fmt.Errorf("canonical: record field: missing name")
+		}
 		var fieldName string
-		if err := json.Unmarshal(fieldObj["name"], &fieldName); err != nil {
+		if err := json.Unmarshal(nameRaw, &fieldName); err != nil {
 			return fmt.Errorf("canonical: record field: invalid name: %w", err)
 		}
 
+		typeRaw, ok := fieldObj["type"]
+		if !ok {
+			return fmt.Errorf("canonical: record field: missing type")
+		}
 		var fieldType Schema
-		if err := fieldType.UnmarshalJSON(fieldObj["type"]); err != nil {
+		if err := fieldType.UnmarshalJSON(typeRaw); err != nil {
 			return fmt.Errorf("canonical: record field: invalid type: %w", err)
 		}
 
@@ -385,13 +409,21 @@ func (s *Schema) unmarshalRecord(obj map[string]json.RawMessage) error {
 }
 
 func (s *Schema) unmarshalEnum(obj map[string]json.RawMessage) error {
+	rawName, ok := obj["name"]
+	if !ok {
+		return fmt.Errorf("canonical: enum: missing name")
+	}
 	var name string
-	if err := json.Unmarshal(obj["name"], &name); err != nil {
+	if err := json.Unmarshal(rawName, &name); err != nil {
 		return fmt.Errorf("canonical: enum: invalid name: %w", err)
 	}
 
+	rawSymbols, ok := obj["symbols"]
+	if !ok {
+		return fmt.Errorf("canonical: enum: missing symbols")
+	}
 	var symbols []string
-	if err := json.Unmarshal(obj["symbols"], &symbols); err != nil {
+	if err := json.Unmarshal(rawSymbols, &symbols); err != nil {
 		return fmt.Errorf("canonical: enum: invalid symbols: %w", err)
 	}
 
@@ -400,8 +432,12 @@ func (s *Schema) unmarshalEnum(obj map[string]json.RawMessage) error {
 }
 
 func (s *Schema) unmarshalArray(obj map[string]json.RawMessage) error {
+	rawItems, ok := obj["items"]
+	if !ok {
+		return fmt.Errorf("canonical: array: missing items")
+	}
 	var items Schema
-	if err := items.UnmarshalJSON(obj["items"]); err != nil {
+	if err := items.UnmarshalJSON(rawItems); err != nil {
 		return fmt.Errorf("canonical: array: invalid items: %w", err)
 	}
 
@@ -410,8 +446,12 @@ func (s *Schema) unmarshalArray(obj map[string]json.RawMessage) error {
 }
 
 func (s *Schema) unmarshalMap(obj map[string]json.RawMessage) error {
+	rawValues, ok := obj["values"]
+	if !ok {
+		return fmt.Errorf("canonical: map: missing values")
+	}
 	var values Schema
-	if err := values.UnmarshalJSON(obj["values"]); err != nil {
+	if err := values.UnmarshalJSON(rawValues); err != nil {
 		return fmt.Errorf("canonical: map: invalid values: %w", err)
 	}
 
@@ -420,13 +460,21 @@ func (s *Schema) unmarshalMap(obj map[string]json.RawMessage) error {
 }
 
 func (s *Schema) unmarshalFixed(obj map[string]json.RawMessage) error {
+	rawName, ok := obj["name"]
+	if !ok {
+		return fmt.Errorf("canonical: fixed: missing name")
+	}
 	var name string
-	if err := json.Unmarshal(obj["name"], &name); err != nil {
+	if err := json.Unmarshal(rawName, &name); err != nil {
 		return fmt.Errorf("canonical: fixed: invalid name: %w", err)
 	}
 
+	rawSize, ok := obj["size"]
+	if !ok {
+		return fmt.Errorf("canonical: fixed: missing size")
+	}
 	var size int
-	if err := json.Unmarshal(obj["size"], &size); err != nil {
+	if err := json.Unmarshal(rawSize, &size); err != nil {
 		return fmt.Errorf("canonical: fixed: invalid size: %w", err)
 	}
 
