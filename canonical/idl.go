@@ -25,21 +25,21 @@ var primitives = map[string]Primitive{
 
 // SchemaFrom converts an [idl.Schema] to a slice of canonical [Schema] values.
 // Each named type in the IDL schema produces one canonical Schema.
-// If the IDL schema has a single Type, a single-element slice is returned.
+// If the IDL schema has a single Type, it appears first, followed by any
+// additional types from the Types field.
 func SchemaFrom(schema *idl.Schema) ([]Schema, error) {
 	if schema == nil {
 		return nil, fmt.Errorf("canonical: nil schema")
 	}
 
+	schemas := make([]Schema, 0, 1+len(schema.Types))
 	if schema.Type != nil {
 		s, err := schemaFromType(schema.Namespace, schema.Type)
 		if err != nil {
 			return nil, err
 		}
-		return []Schema{s}, nil
+		schemas = append(schemas, s)
 	}
-
-	schemas := make([]Schema, 0, len(schema.Types))
 	for _, t := range schema.Types {
 		s, err := schemaFromType(schema.Namespace, t)
 		if err != nil {
@@ -56,16 +56,46 @@ func schemaFromType(namespace string, t idl.Type) (Schema, error) {
 		return schemaFromIdent(namespace, v), nil
 	case idl.Record:
 		return schemaFromRecord(namespace, v)
+	case *idl.Record:
+		if v == nil {
+			return Schema{}, fmt.Errorf("canonical: nil record type")
+		}
+		return schemaFromRecord(namespace, *v)
 	case idl.Enum:
 		return schemaFromEnum(namespace, v), nil
+	case *idl.Enum:
+		if v == nil {
+			return Schema{}, fmt.Errorf("canonical: nil enum type")
+		}
+		return schemaFromEnum(namespace, *v), nil
 	case idl.Array:
 		return schemaFromArray(namespace, v)
+	case *idl.Array:
+		if v == nil {
+			return Schema{}, fmt.Errorf("canonical: nil array type")
+		}
+		return schemaFromArray(namespace, *v)
 	case idl.Map:
-		return schemaFromMap(namespace, v), nil
+		return schemaFromMap(namespace, v)
+	case *idl.Map:
+		if v == nil {
+			return Schema{}, fmt.Errorf("canonical: nil map type")
+		}
+		return schemaFromMap(namespace, *v)
 	case idl.Union:
 		return schemaFromUnion(namespace, v)
+	case *idl.Union:
+		if v == nil {
+			return Schema{}, fmt.Errorf("canonical: nil union type")
+		}
+		return schemaFromUnion(namespace, *v)
 	case idl.Fixed:
 		return schemaFromFixed(namespace, v), nil
+	case *idl.Fixed:
+		if v == nil {
+			return Schema{}, fmt.Errorf("canonical: nil fixed type")
+		}
+		return schemaFromFixed(namespace, *v), nil
 	default:
 		return Schema{}, fmt.Errorf("canonical: unknown idl type %T", t)
 	}
@@ -117,8 +147,11 @@ func schemaFromArray(namespace string, a idl.Array) (Schema, error) {
 	return ArraySchema(Array{Items: items}), nil
 }
 
-func schemaFromMap(namespace string, m idl.Map) Schema {
-	return MapSchema(Map{Values: schemaFromIdent(namespace, *m.Values)})
+func schemaFromMap(namespace string, m idl.Map) (Schema, error) {
+	if m.Values == nil {
+		return Schema{}, fmt.Errorf("canonical: map type has nil Values")
+	}
+	return MapSchema(Map{Values: schemaFromIdent(namespace, *m.Values)}), nil
 }
 
 func schemaFromUnion(namespace string, u idl.Union) (Schema, error) {

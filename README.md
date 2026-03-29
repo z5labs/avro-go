@@ -145,7 +145,8 @@ Accessor methods (`Primitive()`, `Record()`, `Enum()`, `Array()`, `Map()`, `Unio
 ```go
 f, err := idl.Parse(strings.NewReader(`
     namespace com.example;
-    schema record Person {
+    schema int;
+    record Person {
         string name;
         int    age;
     }
@@ -153,7 +154,7 @@ f, err := idl.Parse(strings.NewReader(`
 
 schemas, err := canonical.SchemaFrom(f.Schema)
 
-b, err := json.Marshal(schemas[0])
+b, err := json.Marshal(schemas[1])
 // {"name":"com.example.Person","type":"record","fields":[{"name":"name","type":"string"},{"name":"age","type":"int"}]}
 ```
 

@@ -6,6 +6,7 @@
 package canonical
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/z5labs/avro-go/idl"
@@ -18,78 +19,75 @@ func TestSchemaFrom(t *testing.T) {
 
 	testCases := []struct {
 		name     string
-		input    *idl.Schema
+		src      string
 		expected []Schema
 	}{
 		{
 			name: "null primitive",
-			input: &idl.Schema{
-				Type: idl.Ident{Value: "null"},
+			src:  `schema null;`,
+			expected: []Schema{
+				PrimitiveSchema(Null),
 			},
-			expected: []Schema{PrimitiveSchema(Null)},
 		},
 		{
 			name: "boolean primitive",
-			input: &idl.Schema{
-				Type: idl.Ident{Value: "boolean"},
+			src:  `schema boolean;`,
+			expected: []Schema{
+				PrimitiveSchema(Boolean),
 			},
-			expected: []Schema{PrimitiveSchema(Boolean)},
 		},
 		{
 			name: "int primitive",
-			input: &idl.Schema{
-				Type: idl.Ident{Value: "int"},
+			src:  `schema int;`,
+			expected: []Schema{
+				PrimitiveSchema(Int),
 			},
-			expected: []Schema{PrimitiveSchema(Int)},
 		},
 		{
 			name: "long primitive",
-			input: &idl.Schema{
-				Type: idl.Ident{Value: "long"},
+			src:  `schema long;`,
+			expected: []Schema{
+				PrimitiveSchema(Long),
 			},
-			expected: []Schema{PrimitiveSchema(Long)},
 		},
 		{
 			name: "float primitive",
-			input: &idl.Schema{
-				Type: idl.Ident{Value: "float"},
+			src:  `schema float;`,
+			expected: []Schema{
+				PrimitiveSchema(Float),
 			},
-			expected: []Schema{PrimitiveSchema(Float)},
 		},
 		{
 			name: "double primitive",
-			input: &idl.Schema{
-				Type: idl.Ident{Value: "double"},
+			src:  `schema double;`,
+			expected: []Schema{
+				PrimitiveSchema(Double),
 			},
-			expected: []Schema{PrimitiveSchema(Double)},
 		},
 		{
 			name: "bytes primitive",
-			input: &idl.Schema{
-				Type: idl.Ident{Value: "bytes"},
+			src:  `schema bytes;`,
+			expected: []Schema{
+				PrimitiveSchema(Bytes),
 			},
-			expected: []Schema{PrimitiveSchema(Bytes)},
 		},
 		{
 			name: "string primitive",
-			input: &idl.Schema{
-				Type: idl.Ident{Value: "string"},
+			src:  `schema string;`,
+			expected: []Schema{
+				PrimitiveSchema(String),
 			},
-			expected: []Schema{PrimitiveSchema(String)},
 		},
 		{
 			name: "record with schema namespace",
-			input: &idl.Schema{
-				Namespace: "com.example",
-				Type: idl.Record{
-					Name: "Person",
-					Fields: []*idl.Field{
-						{Name: "name", Type: idl.Ident{Value: "string"}},
-						{Name: "age", Type: idl.Ident{Value: "int"}},
-					},
-				},
-			},
+			src: `namespace com.example;
+schema int;
+record Person {
+	string name;
+	int age;
+}`,
 			expected: []Schema{
+				PrimitiveSchema(Int),
 				RecordSchema(Record{
 					Name: "com.example.Person",
 					Fields: []Field{
@@ -101,17 +99,14 @@ func TestSchemaFrom(t *testing.T) {
 		},
 		{
 			name: "record with type namespace override",
-			input: &idl.Schema{
-				Namespace: "com.example",
-				Type: idl.Record{
-					Name:      "Person",
-					Namespace: "org.other",
-					Fields: []*idl.Field{
-						{Name: "name", Type: idl.Ident{Value: "string"}},
-					},
-				},
-			},
+			src: `namespace com.example;
+schema int;
+@namespace("org.other")
+record Person {
+	string name;
+}`,
 			expected: []Schema{
+				PrimitiveSchema(Int),
 				RecordSchema(Record{
 					Name: "org.other.Person",
 					Fields: []Field{
@@ -121,72 +116,14 @@ func TestSchemaFrom(t *testing.T) {
 			},
 		},
 		{
-			name: "record with already qualified name",
-			input: &idl.Schema{
-				Namespace: "com.example",
-				Type: idl.Record{
-					Name: "com.full.Person",
-					Fields: []*idl.Field{
-						{Name: "name", Type: idl.Ident{Value: "string"}},
-					},
-				},
-			},
-			expected: []Schema{
-				RecordSchema(Record{
-					Name: "com.full.Person",
-					Fields: []Field{
-						{Name: "name", Type: PrimitiveSchema(String)},
-					},
-				}),
-			},
-		},
-		{
-			name: "record with no namespace",
-			input: &idl.Schema{
-				Type: idl.Record{
-					Name: "Person",
-					Fields: []*idl.Field{
-						{Name: "name", Type: idl.Ident{Value: "string"}},
-					},
-				},
-			},
-			expected: []Schema{
-				RecordSchema(Record{
-					Name: "Person",
-					Fields: []Field{
-						{Name: "name", Type: PrimitiveSchema(String)},
-					},
-				}),
-			},
-		},
-		{
-			name: "record with no fields",
-			input: &idl.Schema{
-				Namespace: "com.example",
-				Type: idl.Record{
-					Name:   "Empty",
-					Fields: []*idl.Field{},
-				},
-			},
-			expected: []Schema{
-				RecordSchema(Record{
-					Name:   "com.example.Empty",
-					Fields: []Field{},
-				}),
-			},
-		},
-		{
 			name: "record with named type reference field",
-			input: &idl.Schema{
-				Namespace: "com.example",
-				Type: idl.Record{
-					Name: "Person",
-					Fields: []*idl.Field{
-						{Name: "address", Type: idl.Ident{Value: "Address"}},
-					},
-				},
-			},
+			src: `namespace com.example;
+schema int;
+record Person {
+	Address address;
+}`,
 			expected: []Schema{
+				PrimitiveSchema(Int),
 				RecordSchema(Record{
 					Name: "com.example.Person",
 					Fields: []Field{
@@ -197,16 +134,13 @@ func TestSchemaFrom(t *testing.T) {
 		},
 		{
 			name: "record with already qualified named type reference",
-			input: &idl.Schema{
-				Namespace: "com.example",
-				Type: idl.Record{
-					Name: "Person",
-					Fields: []*idl.Field{
-						{Name: "address", Type: idl.Ident{Value: "org.other.Address"}},
-					},
-				},
-			},
+			src: `namespace com.example;
+schema int;
+record Person {
+	org.other.Address address;
+}`,
 			expected: []Schema{
+				PrimitiveSchema(Int),
 				RecordSchema(Record{
 					Name: "com.example.Person",
 					Fields: []Field{
@@ -216,227 +150,14 @@ func TestSchemaFrom(t *testing.T) {
 			},
 		},
 		{
-			name: "enum",
-			input: &idl.Schema{
-				Namespace: "com.example",
-				Type: idl.Enum{
-					Name: "Color",
-					Values: []*idl.Ident{
-						{Value: "RED"},
-						{Value: "GREEN"},
-						{Value: "BLUE"},
-					},
-				},
-			},
+			name: "record with nullable field",
+			src: `namespace com.example;
+schema int;
+record Person {
+	string? middle_name;
+}`,
 			expected: []Schema{
-				EnumSchema(Enum{
-					Name:    "com.example.Color",
-					Symbols: []string{"RED", "GREEN", "BLUE"},
-				}),
-			},
-		},
-		{
-			name: "enum with type namespace override",
-			input: &idl.Schema{
-				Namespace: "com.example",
-				Type: idl.Enum{
-					Name:      "Color",
-					Namespace: "org.other",
-					Values: []*idl.Ident{
-						{Value: "RED"},
-					},
-				},
-			},
-			expected: []Schema{
-				EnumSchema(Enum{
-					Name:    "org.other.Color",
-					Symbols: []string{"RED"},
-				}),
-			},
-		},
-		{
-			name: "array of primitives",
-			input: &idl.Schema{
-				Type: idl.Array{
-					Items: idl.Ident{Value: "string"},
-				},
-			},
-			expected: []Schema{
-				ArraySchema(Array{Items: PrimitiveSchema(String)}),
-			},
-		},
-		{
-			name: "array of named type",
-			input: &idl.Schema{
-				Namespace: "com.example",
-				Type: idl.Array{
-					Items: idl.Ident{Value: "Person"},
-				},
-			},
-			expected: []Schema{
-				ArraySchema(Array{Items: PrimitiveSchema(Primitive("com.example.Person"))}),
-			},
-		},
-		{
-			name: "map of primitives",
-			input: &idl.Schema{
-				Type: idl.Map{
-					Values: &idl.Ident{Value: "int"},
-				},
-			},
-			expected: []Schema{
-				MapSchema(Map{Values: PrimitiveSchema(Int)}),
-			},
-		},
-		{
-			name: "map of named type",
-			input: &idl.Schema{
-				Namespace: "com.example",
-				Type: idl.Map{
-					Values: &idl.Ident{Value: "Person"},
-				},
-			},
-			expected: []Schema{
-				MapSchema(Map{Values: PrimitiveSchema(Primitive("com.example.Person"))}),
-			},
-		},
-		{
-			name: "union",
-			input: &idl.Schema{
-				Type: idl.Union{
-					Types: []idl.Type{
-						idl.Ident{Value: "null"},
-						idl.Ident{Value: "string"},
-					},
-				},
-			},
-			expected: []Schema{
-				UnionSchema(Union{
-					PrimitiveSchema(Null),
-					PrimitiveSchema(String),
-				}),
-			},
-		},
-		{
-			name: "union with named type",
-			input: &idl.Schema{
-				Namespace: "com.example",
-				Type: idl.Union{
-					Types: []idl.Type{
-						idl.Ident{Value: "null"},
-						idl.Ident{Value: "Person"},
-					},
-				},
-			},
-			expected: []Schema{
-				UnionSchema(Union{
-					PrimitiveSchema(Null),
-					PrimitiveSchema(Primitive("com.example.Person")),
-				}),
-			},
-		},
-		{
-			name: "fixed",
-			input: &idl.Schema{
-				Namespace: "com.example",
-				Type: idl.Fixed{
-					Name: "MD5",
-					Size: 16,
-				},
-			},
-			expected: []Schema{
-				FixedSchema(Fixed{Name: "com.example.MD5", Size: 16}),
-			},
-		},
-		{
-			name: "fixed with type namespace override",
-			input: &idl.Schema{
-				Namespace: "com.example",
-				Type: idl.Fixed{
-					Name:      "MD5",
-					Namespace: "org.other",
-					Size:      16,
-				},
-			},
-			expected: []Schema{
-				FixedSchema(Fixed{Name: "org.other.MD5", Size: 16}),
-			},
-		},
-		{
-			name: "multiple types",
-			input: &idl.Schema{
-				Namespace: "com.example",
-				Types: []idl.Type{
-					idl.Record{
-						Name: "Person",
-						Fields: []*idl.Field{
-							{Name: "name", Type: idl.Ident{Value: "string"}},
-						},
-					},
-					idl.Enum{
-						Name: "Color",
-						Values: []*idl.Ident{
-							{Value: "RED"},
-						},
-					},
-				},
-			},
-			expected: []Schema{
-				RecordSchema(Record{
-					Name: "com.example.Person",
-					Fields: []Field{
-						{Name: "name", Type: PrimitiveSchema(String)},
-					},
-				}),
-				EnumSchema(Enum{
-					Name:    "com.example.Color",
-					Symbols: []string{"RED"},
-				}),
-			},
-		},
-		{
-			name: "record with array field",
-			input: &idl.Schema{
-				Namespace: "com.example",
-				Type: idl.Record{
-					Name: "Person",
-					Fields: []*idl.Field{
-						{
-							Name: "tags",
-							Type: idl.Array{Items: idl.Ident{Value: "string"}},
-						},
-					},
-				},
-			},
-			expected: []Schema{
-				RecordSchema(Record{
-					Name: "com.example.Person",
-					Fields: []Field{
-						{Name: "tags", Type: ArraySchema(Array{Items: PrimitiveSchema(String)})},
-					},
-				}),
-			},
-		},
-		{
-			name: "record with union field",
-			input: &idl.Schema{
-				Namespace: "com.example",
-				Type: idl.Record{
-					Name: "Person",
-					Fields: []*idl.Field{
-						{
-							Name: "middle_name",
-							Type: idl.Union{
-								Types: []idl.Type{
-									idl.Ident{Value: "null"},
-									idl.Ident{Value: "string"},
-								},
-							},
-						},
-					},
-				},
-			},
-			expected: []Schema{
+				PrimitiveSchema(Int),
 				RecordSchema(Record{
 					Name: "com.example.Person",
 					Fields: []Field{
@@ -452,9 +173,182 @@ func TestSchemaFrom(t *testing.T) {
 			},
 		},
 		{
-			name:     "empty schema with no type or types",
-			input:    &idl.Schema{},
-			expected: []Schema{},
+			name: "record with union field",
+			src: `namespace com.example;
+schema int;
+record Person {
+	union { null, string } middle_name;
+}`,
+			expected: []Schema{
+				PrimitiveSchema(Int),
+				RecordSchema(Record{
+					Name: "com.example.Person",
+					Fields: []Field{
+						{
+							Name: "middle_name",
+							Type: UnionSchema(Union{
+								PrimitiveSchema(Null),
+								PrimitiveSchema(String),
+							}),
+						},
+					},
+				}),
+			},
+		},
+		{
+			name: "record with map field",
+			src: `namespace com.example;
+schema int;
+record Person {
+	map<string> tags;
+}`,
+			expected: []Schema{
+				PrimitiveSchema(Int),
+				RecordSchema(Record{
+					Name: "com.example.Person",
+					Fields: []Field{
+						{Name: "tags", Type: MapSchema(Map{Values: PrimitiveSchema(String)})},
+					},
+				}),
+			},
+		},
+		{
+			name: "enum",
+			src: `namespace com.example;
+schema int;
+enum Color {
+	RED, GREEN, BLUE
+}`,
+			expected: []Schema{
+				PrimitiveSchema(Int),
+				EnumSchema(Enum{
+					Name:    "com.example.Color",
+					Symbols: []string{"RED", "GREEN", "BLUE"},
+				}),
+			},
+		},
+		{
+			name: "enum with type namespace override",
+			src: `namespace com.example;
+schema int;
+@namespace("org.other")
+enum Color {
+	RED
+}`,
+			expected: []Schema{
+				PrimitiveSchema(Int),
+				EnumSchema(Enum{
+					Name:    "org.other.Color",
+					Symbols: []string{"RED"},
+				}),
+			},
+		},
+		{
+			name: "fixed",
+			src: `namespace com.example;
+schema int;
+fixed MD5(16);`,
+			expected: []Schema{
+				PrimitiveSchema(Int),
+				FixedSchema(Fixed{Name: "com.example.MD5", Size: 16}),
+			},
+		},
+		{
+			name: "fixed with type namespace override",
+			src: `namespace com.example;
+schema int;
+@namespace("org.other")
+fixed MD5(16);`,
+			expected: []Schema{
+				PrimitiveSchema(Int),
+				FixedSchema(Fixed{Name: "org.other.MD5", Size: 16}),
+			},
+		},
+		{
+			name: "multiple types",
+			src: `namespace com.example;
+schema int;
+record Person {
+	string name;
+}
+enum Color {
+	RED
+}`,
+			expected: []Schema{
+				PrimitiveSchema(Int),
+				RecordSchema(Record{
+					Name: "com.example.Person",
+					Fields: []Field{
+						{Name: "name", Type: PrimitiveSchema(String)},
+					},
+				}),
+				EnumSchema(Enum{
+					Name:    "com.example.Color",
+					Symbols: []string{"RED"},
+				}),
+			},
+		},
+		{
+			name: "map schema type",
+			src:  `schema map<int>;`,
+			expected: []Schema{
+				MapSchema(Map{Values: PrimitiveSchema(Int)}),
+			},
+		},
+		{
+			name: "map of named type",
+			src: `namespace com.example;
+schema map<Person>;`,
+			expected: []Schema{
+				MapSchema(Map{Values: PrimitiveSchema(Primitive("com.example.Person"))}),
+			},
+		},
+		{
+			name: "union schema type",
+			src:  `schema union { null, string };`,
+			expected: []Schema{
+				UnionSchema(Union{
+					PrimitiveSchema(Null),
+					PrimitiveSchema(String),
+				}),
+			},
+		},
+		{
+			name: "union with named type",
+			src: `namespace com.example;
+schema union { null, Person };`,
+			expected: []Schema{
+				UnionSchema(Union{
+					PrimitiveSchema(Null),
+					PrimitiveSchema(Primitive("com.example.Person")),
+				}),
+			},
+		},
+		{
+			name: "nullable schema type",
+			src:  `schema string?;`,
+			expected: []Schema{
+				UnionSchema(Union{
+					PrimitiveSchema(Null),
+					PrimitiveSchema(String),
+				}),
+			},
+		},
+		{
+			name: "record with no namespace",
+			src: `schema int;
+record Person {
+	string name;
+}`,
+			expected: []Schema{
+				PrimitiveSchema(Int),
+				RecordSchema(Record{
+					Name: "Person",
+					Fields: []Field{
+						{Name: "name", Type: PrimitiveSchema(String)},
+					},
+				}),
+			},
 		},
 	}
 
@@ -462,7 +356,10 @@ func TestSchemaFrom(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			result, err := SchemaFrom(tc.input)
+			f, err := idl.Parse(strings.NewReader(tc.src))
+			require.NoError(t, err)
+
+			result, err := SchemaFrom(f.Schema)
 
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, result)

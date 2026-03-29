@@ -8,30 +8,33 @@ package canonical_test
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/z5labs/avro-go/canonical"
 	"github.com/z5labs/avro-go/idl"
 )
 
 func ExampleSchemaFrom() {
-	idlSchema := &idl.Schema{
-		Namespace: "com.example",
-		Type: idl.Record{
-			Name: "Person",
-			Fields: []*idl.Field{
-				{Name: "name", Type: idl.Ident{Value: "string"}},
-				{Name: "age", Type: idl.Ident{Value: "int"}},
-			},
-		},
-	}
-
-	schemas, err := canonical.SchemaFrom(idlSchema)
+	f, err := idl.Parse(strings.NewReader(`
+		namespace com.example;
+		schema int;
+		record Person {
+			string name;
+			int age;
+		}
+	`))
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 
-	b, err := json.Marshal(schemas[0])
+	schemas, err := canonical.SchemaFrom(f.Schema)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	b, err := json.Marshal(schemas[1])
 	if err != nil {
 		fmt.Println(err)
 		return
