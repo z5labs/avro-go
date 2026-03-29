@@ -602,6 +602,69 @@ func TestWriteBytes_error(t *testing.T) {
 	})
 }
 
+func TestWriteFixed(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		input    []byte
+		expected []byte
+	}{
+		{
+			name:     "single byte",
+			input:    []byte{0xff},
+			expected: []byte{0xff},
+		},
+		{
+			name:     "multiple bytes",
+			input:    []byte{0x01, 0x02, 0x03},
+			expected: []byte{0x01, 0x02, 0x03},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var buf bytes.Buffer
+			w := &BinaryWriter{out: &buf}
+
+			err := w.WriteFixed(tc.input)
+
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, buf.Bytes())
+		})
+	}
+}
+
+func TestWriteFixed_error(t *testing.T) {
+	t.Parallel()
+
+	t.Run("write error", func(t *testing.T) {
+		t.Parallel()
+
+		w := &BinaryWriter{out: writerFunc(func(p []byte) (int, error) {
+			return 0, io.ErrClosedPipe
+		})}
+
+		err := w.WriteFixed([]byte{0x01, 0x02})
+
+		require.ErrorIs(t, err, io.ErrClosedPipe)
+	})
+
+	t.Run("short write", func(t *testing.T) {
+		t.Parallel()
+
+		w := &BinaryWriter{out: writerFunc(func(p []byte) (int, error) {
+			return 0, nil
+		})}
+
+		err := w.WriteFixed([]byte{0x01, 0x02})
+
+		require.ErrorIs(t, err, io.ErrShortWrite)
+	})
+}
+
 func TestWriteString(t *testing.T) {
 	t.Parallel()
 
@@ -1157,6 +1220,59 @@ func TestReadBytes_error(t *testing.T) {
 		})}
 
 		_, err := r.ReadBytes()
+
+		require.ErrorIs(t, err, io.ErrClosedPipe)
+	})
+}
+
+func TestReadFixed(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		input    []byte
+		size     int
+		expected []byte
+	}{
+		{
+			name:     "single byte",
+			input:    []byte{0xff},
+			size:     1,
+			expected: []byte{0xff},
+		},
+		{
+			name:     "multiple bytes",
+			input:    []byte{0x01, 0x02, 0x03},
+			size:     3,
+			expected: []byte{0x01, 0x02, 0x03},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			r := &BinaryReader{in: bytes.NewReader(tc.input)}
+
+			got, err := r.ReadFixed(tc.size)
+
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, got)
+		})
+	}
+}
+
+func TestReadFixed_error(t *testing.T) {
+	t.Parallel()
+
+	t.Run("read error", func(t *testing.T) {
+		t.Parallel()
+
+		r := &BinaryReader{in: readerFunc(func(p []byte) (int, error) {
+			return 0, io.ErrClosedPipe
+		})}
+
+		_, err := r.ReadFixed(4)
 
 		require.ErrorIs(t, err, io.ErrClosedPipe)
 	})
