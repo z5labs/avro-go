@@ -7,10 +7,12 @@ package avro
 
 import (
 	"encoding/binary"
+	"errors"
 	"io"
 	"math"
 )
 
+// BinaryMarshaler is the interface implemented by types that can marshal themselves into an Avro binary representation.
 type BinaryMarshaler interface {
 	MarshalAvroBinary(w *BinaryWriter) error
 }
@@ -118,4 +120,109 @@ func (w *BinaryWriter) WriteString(s string) error {
 		return io.ErrShortWrite
 	}
 	return nil
+}
+
+// BinaryUnmarshaler is the interface implemented by types that can unmarshal an Avro binary representation of themselves.
+type BinaryUnmarshaler interface {
+	UnmarshalAvroBinary(r *BinaryReader) error
+}
+
+// UnmarshalBinary reads Avro data from the given reader.
+func UnmarshalBinary(r io.Reader, v BinaryUnmarshaler) error {
+	return v.UnmarshalAvroBinary(&BinaryReader{in: r})
+}
+
+// BinaryReader provides methods to read Avro data types from an underlying io.Reader.
+type BinaryReader struct {
+	in io.Reader
+}
+
+var errNegativeLength = errors.New("avro: negative length")
+
+// ReadBool reads a boolean value from the reader. It returns true if the byte is non-zero.
+func (r *BinaryReader) ReadBool() (bool, error) {
+	var buf [1]byte
+	_, err := io.ReadFull(r.in, buf[:])
+	if err != nil {
+		return false, err
+	}
+	return buf[0] != 0, nil
+}
+
+// ReadInt reads a 32-bit integer from the reader using variable-length zigzag encoding.
+func (r *BinaryReader) ReadInt() (int32, error) {
+	l, err := r.ReadLong()
+	if err != nil {
+		return 0, err
+	}
+	return int32(l), nil
+}
+
+// ReadLong reads a 64-bit integer from the reader using variable-length zigzag encoding.
+func (r *BinaryReader) ReadLong() (int64, error) {
+	var buf [1]byte
+	var unsigned uint64
+	var shift uint
+	for {
+		_, err := io.ReadFull(r.in, buf[:])
+		if err != nil {
+			return 0, err
+		}
+		b := buf[0]
+		unsigned |= uint64(b&0x7f) << shift
+		if b&0x80 == 0 {
+			break
+		}
+		shift += 7
+	}
+	return int64(unsigned>>1) ^ -int64(unsigned&1), nil
+}
+
+// ReadFloat reads a 32-bit floating-point number from the reader in little-endian format.
+func (r *BinaryReader) ReadFloat() (float32, error) {
+	var buf [4]byte
+	_, err := io.ReadFull(r.in, buf[:])
+	if err != nil {
+		return 0, err
+	}
+	return math.Float32frombits(binary.LittleEndian.Uint32(buf[:])), nil
+}
+
+// ReadDouble reads a 64-bit floating-point number from the reader in little-endian format.
+func (r *BinaryReader) ReadDouble() (float64, error) {
+	var buf [8]byte
+	_, err := io.ReadFull(r.in, buf[:])
+	if err != nil {
+		return 0, err
+	}
+	return math.Float64frombits(binary.LittleEndian.Uint64(buf[:])), nil
+}
+
+// ReadBytes reads a byte array from the reader. It first reads the length as a long, followed by the bytes.
+func (r *BinaryReader) ReadBytes() ([]byte, error) {
+	n, err := r.ReadLong()
+	if err != nil {
+		return nil, err
+	}
+	if n < 0 {
+		return nil, errNegativeLength
+	}
+	if n == 0 {
+		return []byte{}, nil
+	}
+	buf := make([]byte, n)
+	_, err = io.ReadFull(r.in, buf)
+	if err != nil {
+		return nil, err
+	}
+	return buf, nil
+}
+
+// ReadString reads a string from the reader. It first reads the length as a long, followed by the UTF-8 bytes of the string.
+func (r *BinaryReader) ReadString() (string, error) {
+	b, err := r.ReadBytes()
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
