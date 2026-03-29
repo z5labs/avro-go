@@ -4,13 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-avro-go is a Go library for working with Avro encoded data. Currently focused on building an IDL (Interface Definition Language) parser for Avro schemas.
+avro-go is a Go library for working with Avro encoded data. It has two main areas: an IDL (Interface Definition Language) parser for Avro schemas, and binary marshalling for Avro's binary encoding format.
 
 ## Commands
 
 ```bash
-# Run all tests
+# Run all tests (CI uses -race -cover)
 go test ./...
+go test -race -cover ./...
 
 # Run tests for a specific package
 go test ./idl/...
@@ -18,11 +19,8 @@ go test ./idl/...
 # Run a single test
 go test ./idl -run TestTokenizer
 
-# Run tests with verbose output
-go test ./... -v
-
-# Format code
-go fmt ./...
+# Lint (CI uses golangci-lint)
+golangci-lint run
 
 # Build
 go build ./...
@@ -30,32 +28,46 @@ go build ./...
 
 ## Architecture
 
+### `avro` Package (root)
+
+Provides Avro binary serialization via the `BinaryMarshaler` interface and `BinaryWriter`:
+
+- **`BinaryMarshaler`** interface: Types implement `MarshalAvroBinary(w *BinaryWriter) error`
+- **`BinaryWriter`**: Wraps `io.Writer` with typed write methods (`WriteBool`, `WriteInt`, `WriteLong`, `WriteFloat`, `WriteDouble`, `WriteBytes`, `WriteString`)
+- **`MarshalBinary(w io.Writer, v BinaryMarshaler)`**: Top-level entry point
+
 ### `idl` Package
 
-The IDL package provides tools for parsing Avro IDL files. It follows a pipeline architecture:
+Parses Avro IDL files and formats them back. Follows a pipeline architecture:
 
-**Tokenizer → Parser → AST**
+**Tokenizer → Parser → AST → Printer**
 
 1. **Tokenizer** (`tokenizer.go`): Converts IDL source into tokens using `iter.Seq2[Token, error]`. Token types include comments, identifiers, symbols, strings, and numbers.
 
 2. **Parser** (`parser.go`): Converts tokens into an AST. Uses `iter.Pull2()` to pull tokens on demand. Outputs a `File` containing schemas and protocols.
 
-3. **Printer** (`printer.go`): Formats AST back to IDL text (currently a stub).
+3. **Printer** (`printer.go`): Formats AST back to IDL text.
+
+For detailed IDL implementation patterns (helper functions, closure patterns, error types, testing conventions), see `idl/CLAUDE.md`.
 
 ### State Machine Pattern
 
-Both tokenizer and parser use a recursive action function pattern:
+Tokenizer, parser, and printer all use a recursive action function pattern:
 ```go
 type tokenizerAction func(t *tokenizer, yield func(Token, error) bool) tokenizerAction
 type parserAction[T any] func(p *parser, t T) (parserAction[T], error)
+type printerAction func(pr *printer, f *File) printerAction
 ```
 
-Functions return the next action to execute, enabling clean sequential processing.
+Functions return the next action to execute, enabling clean sequential processing. State is captured via closures.
 
 ### Type System
 
 Schema types implement the `Type` interface with a marker method `idl()`:
-- `Record`, `Enum`, `Array`, `Map`, `Union`, `Fixed`
+- `Ident`, `Record`, `Enum`, `Array`, `Map`, `Union`, `Fixed`
+
+Value types implement the `Value` interface with a marker method `val()`:
+- `NullValue`, `BoolValue`, `IntValue`, `FloatValue`, `StringValue`, `ArrayValue`, `ObjectValue`
 
 ## Commit Convention
 
