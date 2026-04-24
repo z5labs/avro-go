@@ -1657,7 +1657,7 @@ func TestBinaryWriter_Offset_WrapsErrors(t *testing.T) {
 		require.Equal(t, int64(0), w.Offset())
 	})
 
-	t.Run("partial write advances offset before wrapping", func(t *testing.T) {
+	t.Run("partial write records bytes written without advancing offset", func(t *testing.T) {
 		t.Parallel()
 
 		w := &BinaryWriter{out: writerFunc(func(p []byte) (int, error) {
@@ -1668,11 +1668,15 @@ func TestBinaryWriter_Offset_WrapsErrors(t *testing.T) {
 
 		require.Error(t, err)
 		require.ErrorIs(t, err, io.ErrClosedPipe)
-		require.Contains(t, err.Error(), "offset 2")
-		require.Equal(t, int64(2), w.Offset())
+		require.Contains(t, err.Error(), "offset 0")
+		require.Equal(t, int64(0), w.Offset())
+
+		var werr *BinaryWriterError
+		require.ErrorAs(t, err, &werr)
+		require.Equal(t, int64(2), werr.BytesWritten)
 	})
 
-	t.Run("short write wraps ErrShortWrite with offset", func(t *testing.T) {
+	t.Run("short write wraps ErrShortWrite with pre-write offset and bytes written", func(t *testing.T) {
 		t.Parallel()
 
 		w := &BinaryWriter{out: writerFunc(func(p []byte) (int, error) {
@@ -1683,11 +1687,15 @@ func TestBinaryWriter_Offset_WrapsErrors(t *testing.T) {
 
 		require.Error(t, err)
 		require.ErrorIs(t, err, io.ErrShortWrite)
-		require.Contains(t, err.Error(), "offset 2")
-		require.Equal(t, int64(2), w.Offset())
+		require.Contains(t, err.Error(), "offset 0")
+		require.Equal(t, int64(0), w.Offset())
+
+		var werr *BinaryWriterError
+		require.ErrorAs(t, err, &werr)
+		require.Equal(t, int64(2), werr.BytesWritten)
 	})
 
-	t.Run("errors.As extracts BinaryWriterError with offset", func(t *testing.T) {
+	t.Run("errors.As extracts BinaryWriterError with offset and bytes written", func(t *testing.T) {
 		t.Parallel()
 
 		w := &BinaryWriter{out: writerFunc(func(p []byte) (int, error) {
@@ -1698,7 +1706,32 @@ func TestBinaryWriter_Offset_WrapsErrors(t *testing.T) {
 
 		var werr *BinaryWriterError
 		require.ErrorAs(t, err, &werr)
-		require.Equal(t, int64(2), werr.Offset)
+		require.Equal(t, int64(0), werr.Offset)
+		require.Equal(t, int64(2), werr.BytesWritten)
 		require.ErrorIs(t, werr.Err, io.ErrClosedPipe)
+	})
+
+	t.Run("error after successful length prefix reports offset at prefix end", func(t *testing.T) {
+		t.Parallel()
+
+		calls := 0
+		w := &BinaryWriter{out: writerFunc(func(p []byte) (int, error) {
+			calls++
+			if calls == 1 {
+				return len(p), nil
+			}
+			return 1, io.ErrClosedPipe
+		})}
+
+		err := w.WriteString("abc")
+
+		require.Error(t, err)
+		require.ErrorIs(t, err, io.ErrClosedPipe)
+
+		var werr *BinaryWriterError
+		require.ErrorAs(t, err, &werr)
+		require.Equal(t, int64(1), werr.Offset)
+		require.Equal(t, int64(1), werr.BytesWritten)
+		require.Equal(t, int64(1), w.Offset())
 	})
 }

@@ -34,27 +34,29 @@ func (w *BinaryWriter) Offset() int64 {
 	return w.offset
 }
 
-// BinaryWriterError is returned when a BinaryWriter operation fails. It reports
-// the byte offset at which the error occurred and wraps the underlying cause
-// so callers can use errors.Is and errors.As to inspect it.
+// BinaryWriterError is returned when a BinaryWriter operation fails. Offset is
+// the writer's byte offset before the failed write attempt, BytesWritten is
+// the number of bytes that were written during the failed attempt, and Err is
+// the underlying cause so callers can use errors.Is and errors.As to inspect it.
 type BinaryWriterError struct {
-	Offset int64
-	Err    error
+	Offset       int64
+	BytesWritten int64
+	Err          error
 }
 
 func (e *BinaryWriterError) Error() string {
-	return fmt.Sprintf("avro: binary writer: offset %d: %v", e.Offset, e.Err)
+	return fmt.Sprintf("avro: binary writer: offset %d: wrote %d bytes: %v", e.Offset, e.BytesWritten, e.Err)
 }
 
 func (e *BinaryWriterError) Unwrap() error {
 	return e.Err
 }
 
-func (w *BinaryWriter) wrapErr(err error) error {
+func (w *BinaryWriter) wrapErr(err error, bytesWritten int) error {
 	if err == nil {
 		return nil
 	}
-	return &BinaryWriterError{Offset: w.offset, Err: err}
+	return &BinaryWriterError{Offset: w.offset, BytesWritten: int64(bytesWritten), Err: err}
 }
 
 // WriteBool writes a boolean value to the writer. It writes 1 for true and 0 for false.
@@ -64,13 +66,13 @@ func (w *BinaryWriter) WriteBool(b bool) error {
 		value = 1
 	}
 	n, err := w.out.Write([]byte{value})
-	w.offset += int64(n)
 	if err != nil {
-		return w.wrapErr(err)
+		return w.wrapErr(err, n)
 	}
 	if n != 1 {
-		return w.wrapErr(io.ErrShortWrite)
+		return w.wrapErr(io.ErrShortWrite, n)
 	}
+	w.offset += int64(n)
 	return nil
 }
 
@@ -84,13 +86,13 @@ func (w *BinaryWriter) WriteLong(l int64) error {
 	var buf [binary.MaxVarintLen64]byte
 	n := binary.PutVarint(buf[:], l)
 	nw, err := w.out.Write(buf[:n])
-	w.offset += int64(nw)
 	if err != nil {
-		return w.wrapErr(err)
+		return w.wrapErr(err, nw)
 	}
 	if nw != n {
-		return w.wrapErr(io.ErrShortWrite)
+		return w.wrapErr(io.ErrShortWrite, nw)
 	}
+	w.offset += int64(nw)
 	return nil
 }
 
@@ -99,13 +101,13 @@ func (w *BinaryWriter) WriteFloat(f float32) error {
 	var buf [4]byte
 	binary.LittleEndian.PutUint32(buf[:], math.Float32bits(f))
 	nw, err := w.out.Write(buf[:])
-	w.offset += int64(nw)
 	if err != nil {
-		return w.wrapErr(err)
+		return w.wrapErr(err, nw)
 	}
 	if nw != 4 {
-		return w.wrapErr(io.ErrShortWrite)
+		return w.wrapErr(io.ErrShortWrite, nw)
 	}
+	w.offset += int64(nw)
 	return nil
 }
 
@@ -114,13 +116,13 @@ func (w *BinaryWriter) WriteDouble(d float64) error {
 	var buf [8]byte
 	binary.LittleEndian.PutUint64(buf[:], math.Float64bits(d))
 	nw, err := w.out.Write(buf[:])
-	w.offset += int64(nw)
 	if err != nil {
-		return w.wrapErr(err)
+		return w.wrapErr(err, nw)
 	}
 	if nw != 8 {
-		return w.wrapErr(io.ErrShortWrite)
+		return w.wrapErr(io.ErrShortWrite, nw)
 	}
+	w.offset += int64(nw)
 	return nil
 }
 
@@ -130,26 +132,26 @@ func (w *BinaryWriter) WriteBytes(b []byte) error {
 		return err
 	}
 	nw, err := w.out.Write(b)
-	w.offset += int64(nw)
 	if err != nil {
-		return w.wrapErr(err)
+		return w.wrapErr(err, nw)
 	}
 	if nw != len(b) {
-		return w.wrapErr(io.ErrShortWrite)
+		return w.wrapErr(io.ErrShortWrite, nw)
 	}
+	w.offset += int64(nw)
 	return nil
 }
 
 // WriteFixed writes a fixed number of bytes to the writer. Unlike WriteBytes, it does not write a length prefix.
 func (w *BinaryWriter) WriteFixed(b []byte) error {
 	nw, err := w.out.Write(b)
-	w.offset += int64(nw)
 	if err != nil {
-		return w.wrapErr(err)
+		return w.wrapErr(err, nw)
 	}
 	if nw != len(b) {
-		return w.wrapErr(io.ErrShortWrite)
+		return w.wrapErr(io.ErrShortWrite, nw)
 	}
+	w.offset += int64(nw)
 	return nil
 }
 
@@ -159,13 +161,13 @@ func (w *BinaryWriter) WriteString(s string) error {
 		return err
 	}
 	nw, err := io.WriteString(w.out, s)
-	w.offset += int64(nw)
 	if err != nil {
-		return w.wrapErr(err)
+		return w.wrapErr(err, nw)
 	}
 	if nw != len(s) {
-		return w.wrapErr(io.ErrShortWrite)
+		return w.wrapErr(io.ErrShortWrite, nw)
 	}
+	w.offset += int64(nw)
 	return nil
 }
 
