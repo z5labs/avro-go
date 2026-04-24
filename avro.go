@@ -8,6 +8,7 @@ package avro
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 )
@@ -24,7 +25,35 @@ func MarshalBinary(w io.Writer, v BinaryMarshaler) error {
 
 // BinaryWriter provides methods to write Avro data types to an underlying io.Writer.
 type BinaryWriter struct {
-	out io.Writer
+	out    io.Writer
+	offset int64
+}
+
+// Offset returns the number of bytes successfully written so far.
+func (w *BinaryWriter) Offset() int64 {
+	return w.offset
+}
+
+// BinaryWriterError is returned when a BinaryWriter operation fails. Offset is
+// the writer's byte offset before the failed write attempt, BytesWritten is
+// the number of bytes that were written during the failed attempt, and Err is
+// the underlying cause so callers can use errors.Is and errors.As to inspect it.
+type BinaryWriterError struct {
+	Offset       int64
+	BytesWritten int64
+	Err          error
+}
+
+func (e *BinaryWriterError) Error() string {
+	return fmt.Sprintf("avro: binary writer: offset %d: wrote %d bytes: %v", e.Offset, e.BytesWritten, e.Err)
+}
+
+func (e *BinaryWriterError) Unwrap() error {
+	return e.Err
+}
+
+func (w *BinaryWriter) wrapErr(err error, bytesWritten int) error {
+	return &BinaryWriterError{Offset: w.offset, BytesWritten: int64(bytesWritten), Err: err}
 }
 
 // WriteBool writes a boolean value to the writer. It writes 1 for true and 0 for false.
@@ -35,11 +64,12 @@ func (w *BinaryWriter) WriteBool(b bool) error {
 	}
 	n, err := w.out.Write([]byte{value})
 	if err != nil {
-		return err
+		return w.wrapErr(err, n)
 	}
 	if n != 1 {
-		return io.ErrShortWrite
+		return w.wrapErr(io.ErrShortWrite, n)
 	}
+	w.offset += int64(n)
 	return nil
 }
 
@@ -54,11 +84,12 @@ func (w *BinaryWriter) WriteLong(l int64) error {
 	n := binary.PutVarint(buf[:], l)
 	nw, err := w.out.Write(buf[:n])
 	if err != nil {
-		return err
+		return w.wrapErr(err, nw)
 	}
 	if nw != n {
-		return io.ErrShortWrite
+		return w.wrapErr(io.ErrShortWrite, nw)
 	}
+	w.offset += int64(nw)
 	return nil
 }
 
@@ -68,11 +99,12 @@ func (w *BinaryWriter) WriteFloat(f float32) error {
 	binary.LittleEndian.PutUint32(buf[:], math.Float32bits(f))
 	nw, err := w.out.Write(buf[:])
 	if err != nil {
-		return err
+		return w.wrapErr(err, nw)
 	}
 	if nw != 4 {
-		return io.ErrShortWrite
+		return w.wrapErr(io.ErrShortWrite, nw)
 	}
+	w.offset += int64(nw)
 	return nil
 }
 
@@ -82,27 +114,28 @@ func (w *BinaryWriter) WriteDouble(d float64) error {
 	binary.LittleEndian.PutUint64(buf[:], math.Float64bits(d))
 	nw, err := w.out.Write(buf[:])
 	if err != nil {
-		return err
+		return w.wrapErr(err, nw)
 	}
 	if nw != 8 {
-		return io.ErrShortWrite
+		return w.wrapErr(io.ErrShortWrite, nw)
 	}
+	w.offset += int64(nw)
 	return nil
 }
 
 // WriteBytes writes a byte array to the writer. It first writes the length of the array as a long, followed by the bytes.
 func (w *BinaryWriter) WriteBytes(b []byte) error {
-	err := w.WriteLong(int64(len(b)))
-	if err != nil {
+	if err := w.WriteLong(int64(len(b))); err != nil {
 		return err
 	}
 	nw, err := w.out.Write(b)
 	if err != nil {
-		return err
+		return w.wrapErr(err, nw)
 	}
 	if nw != len(b) {
-		return io.ErrShortWrite
+		return w.wrapErr(io.ErrShortWrite, nw)
 	}
+	w.offset += int64(nw)
 	return nil
 }
 
@@ -110,27 +143,28 @@ func (w *BinaryWriter) WriteBytes(b []byte) error {
 func (w *BinaryWriter) WriteFixed(b []byte) error {
 	nw, err := w.out.Write(b)
 	if err != nil {
-		return err
+		return w.wrapErr(err, nw)
 	}
 	if nw != len(b) {
-		return io.ErrShortWrite
+		return w.wrapErr(io.ErrShortWrite, nw)
 	}
+	w.offset += int64(nw)
 	return nil
 }
 
 // WriteString writes a string to the writer. It first writes the length of the string as a long, followed by the UTF-8 bytes of the string.
 func (w *BinaryWriter) WriteString(s string) error {
-	err := w.WriteLong(int64(len(s)))
-	if err != nil {
+	if err := w.WriteLong(int64(len(s))); err != nil {
 		return err
 	}
 	nw, err := io.WriteString(w.out, s)
 	if err != nil {
-		return err
+		return w.wrapErr(err, nw)
 	}
 	if nw != len(s) {
-		return io.ErrShortWrite
+		return w.wrapErr(io.ErrShortWrite, nw)
 	}
+	w.offset += int64(nw)
 	return nil
 }
 
@@ -146,7 +180,33 @@ func UnmarshalBinary(r io.Reader, v BinaryUnmarshaler) error {
 
 // BinaryReader provides methods to read Avro data types from an underlying io.Reader.
 type BinaryReader struct {
-	in io.Reader
+	in     io.Reader
+	offset int64
+}
+
+// Offset returns the number of bytes successfully consumed so far.
+func (r *BinaryReader) Offset() int64 {
+	return r.offset
+}
+
+// BinaryReaderError is returned when a BinaryReader operation fails. It reports
+// the byte offset at which the error occurred and wraps the underlying cause
+// so callers can use errors.Is and errors.As to inspect it.
+type BinaryReaderError struct {
+	Offset int64
+	Err    error
+}
+
+func (e *BinaryReaderError) Error() string {
+	return fmt.Sprintf("avro: binary reader: offset %d: %v", e.Offset, e.Err)
+}
+
+func (e *BinaryReaderError) Unwrap() error {
+	return e.Err
+}
+
+func (r *BinaryReader) wrapErr(err error) error {
+	return &BinaryReaderError{Offset: r.offset, Err: err}
 }
 
 var (
@@ -160,9 +220,10 @@ var (
 // ReadBool reads a boolean value from the reader. It returns true if the byte is non-zero.
 func (r *BinaryReader) ReadBool() (bool, error) {
 	var buf [1]byte
-	_, err := io.ReadFull(r.in, buf[:])
+	n, err := io.ReadFull(r.in, buf[:])
+	r.offset += int64(n)
 	if err != nil {
-		return false, err
+		return false, r.wrapErr(err)
 	}
 	return buf[0] != 0, nil
 }
@@ -174,7 +235,7 @@ func (r *BinaryReader) ReadInt() (int32, error) {
 		return 0, err
 	}
 	if l < math.MinInt32 || l > math.MaxInt32 {
-		return 0, ErrOverflow
+		return 0, r.wrapErr(ErrOverflow)
 	}
 	return int32(l), nil
 }
@@ -185,9 +246,10 @@ func (r *BinaryReader) ReadLong() (int64, error) {
 	var unsigned uint64
 	var shift uint
 	for i := 0; i < binary.MaxVarintLen64; i++ {
-		_, err := io.ReadFull(r.in, buf[:])
+		n, err := io.ReadFull(r.in, buf[:])
+		r.offset += int64(n)
 		if err != nil {
-			return 0, err
+			return 0, r.wrapErr(err)
 		}
 		b := buf[0]
 		unsigned |= uint64(b&0x7f) << shift
@@ -196,15 +258,16 @@ func (r *BinaryReader) ReadLong() (int64, error) {
 		}
 		shift += 7
 	}
-	return 0, ErrOverflow
+	return 0, r.wrapErr(ErrOverflow)
 }
 
 // ReadFloat reads a 32-bit floating-point number from the reader in little-endian format.
 func (r *BinaryReader) ReadFloat() (float32, error) {
 	var buf [4]byte
-	_, err := io.ReadFull(r.in, buf[:])
+	n, err := io.ReadFull(r.in, buf[:])
+	r.offset += int64(n)
 	if err != nil {
-		return 0, err
+		return 0, r.wrapErr(err)
 	}
 	return math.Float32frombits(binary.LittleEndian.Uint32(buf[:])), nil
 }
@@ -212,9 +275,10 @@ func (r *BinaryReader) ReadFloat() (float32, error) {
 // ReadDouble reads a 64-bit floating-point number from the reader in little-endian format.
 func (r *BinaryReader) ReadDouble() (float64, error) {
 	var buf [8]byte
-	_, err := io.ReadFull(r.in, buf[:])
+	n, err := io.ReadFull(r.in, buf[:])
+	r.offset += int64(n)
 	if err != nil {
-		return 0, err
+		return 0, r.wrapErr(err)
 	}
 	return math.Float64frombits(binary.LittleEndian.Uint64(buf[:])), nil
 }
@@ -226,18 +290,19 @@ func (r *BinaryReader) ReadBytes() ([]byte, error) {
 		return nil, err
 	}
 	if n < 0 {
-		return nil, ErrNegativeLength
+		return nil, r.wrapErr(ErrNegativeLength)
 	}
 	if n > int64(math.MaxInt32) {
-		return nil, ErrOverflow
+		return nil, r.wrapErr(ErrOverflow)
 	}
 	if n == 0 {
 		return []byte{}, nil
 	}
 	buf := make([]byte, n)
-	_, err = io.ReadFull(r.in, buf)
+	nr, err := io.ReadFull(r.in, buf)
+	r.offset += int64(nr)
 	if err != nil {
-		return nil, err
+		return nil, r.wrapErr(err)
 	}
 	return buf, nil
 }
@@ -245,9 +310,10 @@ func (r *BinaryReader) ReadBytes() ([]byte, error) {
 // ReadFixed reads exactly size bytes from the reader. Unlike ReadBytes, it does not read a length prefix.
 func (r *BinaryReader) ReadFixed(size int) ([]byte, error) {
 	buf := make([]byte, size)
-	_, err := io.ReadFull(r.in, buf)
+	n, err := io.ReadFull(r.in, buf)
+	r.offset += int64(n)
 	if err != nil {
-		return nil, err
+		return nil, r.wrapErr(err)
 	}
 	return buf, nil
 }

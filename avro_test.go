@@ -1332,3 +1332,406 @@ func TestReadString_error(t *testing.T) {
 		require.ErrorIs(t, err, io.ErrClosedPipe)
 	})
 }
+
+func TestBinaryReader_Offset(t *testing.T) {
+	t.Parallel()
+
+	t.Run("zero on fresh reader", func(t *testing.T) {
+		t.Parallel()
+
+		r := &BinaryReader{in: bytes.NewReader(nil)}
+
+		require.Equal(t, int64(0), r.Offset())
+	})
+
+	t.Run("advances on ReadBool", func(t *testing.T) {
+		t.Parallel()
+
+		r := &BinaryReader{in: bytes.NewReader([]byte{0x01})}
+
+		_, err := r.ReadBool()
+		require.NoError(t, err)
+		require.Equal(t, int64(1), r.Offset())
+	})
+
+	t.Run("advances on ReadFloat", func(t *testing.T) {
+		t.Parallel()
+
+		buf := make([]byte, 4)
+		binary.LittleEndian.PutUint32(buf, math.Float32bits(1.5))
+		r := &BinaryReader{in: bytes.NewReader(buf)}
+
+		_, err := r.ReadFloat()
+		require.NoError(t, err)
+		require.Equal(t, int64(4), r.Offset())
+	})
+
+	t.Run("advances on ReadDouble", func(t *testing.T) {
+		t.Parallel()
+
+		buf := make([]byte, 8)
+		binary.LittleEndian.PutUint64(buf, math.Float64bits(1.5))
+		r := &BinaryReader{in: bytes.NewReader(buf)}
+
+		_, err := r.ReadDouble()
+		require.NoError(t, err)
+		require.Equal(t, int64(8), r.Offset())
+	})
+
+	t.Run("advances on ReadFixed", func(t *testing.T) {
+		t.Parallel()
+
+		r := &BinaryReader{in: bytes.NewReader([]byte{0x01, 0x02, 0x03, 0x04, 0x05})}
+
+		_, err := r.ReadFixed(5)
+		require.NoError(t, err)
+		require.Equal(t, int64(5), r.Offset())
+	})
+
+	t.Run("advances on single-byte ReadLong", func(t *testing.T) {
+		t.Parallel()
+
+		r := &BinaryReader{in: bytes.NewReader([]byte{0x02})}
+
+		v, err := r.ReadLong()
+		require.NoError(t, err)
+		require.Equal(t, int64(1), v)
+		require.Equal(t, int64(1), r.Offset())
+	})
+
+	t.Run("advances on multi-byte ReadLong", func(t *testing.T) {
+		t.Parallel()
+
+		var buf [binary.MaxVarintLen64]byte
+		n := binary.PutVarint(buf[:], 1<<28)
+		require.Equal(t, 5, n)
+		r := &BinaryReader{in: bytes.NewReader(buf[:n])}
+
+		_, err := r.ReadLong()
+		require.NoError(t, err)
+		require.Equal(t, int64(5), r.Offset())
+	})
+
+	t.Run("advances on ReadBytes", func(t *testing.T) {
+		t.Parallel()
+
+		r := &BinaryReader{in: bytes.NewReader([]byte{0x06, 0x61, 0x62, 0x63})}
+
+		got, err := r.ReadBytes()
+		require.NoError(t, err)
+		require.Equal(t, []byte{0x61, 0x62, 0x63}, got)
+		require.Equal(t, int64(4), r.Offset())
+	})
+
+	t.Run("advances on ReadString", func(t *testing.T) {
+		t.Parallel()
+
+		r := &BinaryReader{in: bytes.NewReader([]byte{0x06, 0x61, 0x62, 0x63})}
+
+		got, err := r.ReadString()
+		require.NoError(t, err)
+		require.Equal(t, "abc", got)
+		require.Equal(t, int64(4), r.Offset())
+	})
+
+	t.Run("accumulates across multiple reads", func(t *testing.T) {
+		t.Parallel()
+
+		r := &BinaryReader{in: bytes.NewReader([]byte{0x01, 0x02, 0xff, 0xff, 0xff})}
+
+		_, err := r.ReadBool()
+		require.NoError(t, err)
+		require.Equal(t, int64(1), r.Offset())
+
+		_, err = r.ReadLong()
+		require.NoError(t, err)
+		require.Equal(t, int64(2), r.Offset())
+
+		_, err = r.ReadFixed(3)
+		require.NoError(t, err)
+		require.Equal(t, int64(5), r.Offset())
+	})
+}
+
+func TestBinaryReader_Offset_WrapsErrors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("EOF on empty reader annotates offset 0", func(t *testing.T) {
+		t.Parallel()
+
+		r := &BinaryReader{in: bytes.NewReader(nil)}
+
+		_, err := r.ReadBool()
+
+		require.Error(t, err)
+		require.ErrorIs(t, err, io.EOF)
+		require.Contains(t, err.Error(), "offset 0")
+		require.Equal(t, int64(0), r.Offset())
+	})
+
+	t.Run("partial read advances offset before wrapping", func(t *testing.T) {
+		t.Parallel()
+
+		r := &BinaryReader{in: readerFunc(func(p []byte) (int, error) {
+			p[0] = 0x01
+			p[1] = 0x02
+			return 2, io.EOF
+		})}
+
+		_, err := r.ReadFloat()
+
+		require.Error(t, err)
+		require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+		require.Contains(t, err.Error(), "offset 2")
+		require.Equal(t, int64(2), r.Offset())
+	})
+
+	t.Run("ReadLong varint overflow wraps ErrOverflow with offset", func(t *testing.T) {
+		t.Parallel()
+
+		input := make([]byte, binary.MaxVarintLen64)
+		for i := range input {
+			input[i] = 0x80
+		}
+		r := &BinaryReader{in: bytes.NewReader(input)}
+
+		_, err := r.ReadLong()
+
+		require.Error(t, err)
+		require.ErrorIs(t, err, ErrOverflow)
+		require.Contains(t, err.Error(), "offset 10")
+		require.Equal(t, int64(10), r.Offset())
+	})
+
+	t.Run("ReadBytes negative length wraps with offset after length varint", func(t *testing.T) {
+		t.Parallel()
+
+		r := &BinaryReader{in: bytes.NewReader([]byte{0x01})}
+
+		_, err := r.ReadBytes()
+
+		require.Error(t, err)
+		require.ErrorIs(t, err, ErrNegativeLength)
+		require.Contains(t, err.Error(), "offset 1")
+		require.Equal(t, int64(1), r.Offset())
+	})
+
+	t.Run("ReadInt overflow from out-of-range long wraps with offset", func(t *testing.T) {
+		t.Parallel()
+
+		var buf [binary.MaxVarintLen64]byte
+		n := binary.PutVarint(buf[:], int64(math.MaxInt32)+1)
+		r := &BinaryReader{in: bytes.NewReader(buf[:n])}
+
+		_, err := r.ReadInt()
+
+		require.Error(t, err)
+		require.ErrorIs(t, err, ErrOverflow)
+		require.Contains(t, err.Error(), "offset")
+		require.Equal(t, int64(n), r.Offset())
+	})
+
+	t.Run("errors.As extracts BinaryReaderError with offset", func(t *testing.T) {
+		t.Parallel()
+
+		r := &BinaryReader{in: readerFunc(func(p []byte) (int, error) {
+			p[0] = 0x01
+			p[1] = 0x02
+			return 2, io.EOF
+		})}
+
+		_, err := r.ReadFloat()
+
+		var rerr *BinaryReaderError
+		require.ErrorAs(t, err, &rerr)
+		require.Equal(t, int64(2), rerr.Offset)
+		require.ErrorIs(t, rerr.Err, io.ErrUnexpectedEOF)
+	})
+}
+
+func TestBinaryWriter_Offset(t *testing.T) {
+	t.Parallel()
+
+	t.Run("zero on fresh writer", func(t *testing.T) {
+		t.Parallel()
+
+		w := &BinaryWriter{out: &bytes.Buffer{}}
+
+		require.Equal(t, int64(0), w.Offset())
+	})
+
+	t.Run("advances on WriteBool", func(t *testing.T) {
+		t.Parallel()
+
+		w := &BinaryWriter{out: &bytes.Buffer{}}
+
+		require.NoError(t, w.WriteBool(true))
+		require.Equal(t, int64(1), w.Offset())
+	})
+
+	t.Run("advances on WriteFloat", func(t *testing.T) {
+		t.Parallel()
+
+		w := &BinaryWriter{out: &bytes.Buffer{}}
+
+		require.NoError(t, w.WriteFloat(1.5))
+		require.Equal(t, int64(4), w.Offset())
+	})
+
+	t.Run("advances on WriteDouble", func(t *testing.T) {
+		t.Parallel()
+
+		w := &BinaryWriter{out: &bytes.Buffer{}}
+
+		require.NoError(t, w.WriteDouble(1.5))
+		require.Equal(t, int64(8), w.Offset())
+	})
+
+	t.Run("advances on WriteFixed", func(t *testing.T) {
+		t.Parallel()
+
+		w := &BinaryWriter{out: &bytes.Buffer{}}
+
+		require.NoError(t, w.WriteFixed([]byte{0x01, 0x02, 0x03}))
+		require.Equal(t, int64(3), w.Offset())
+	})
+
+	t.Run("advances on multi-byte WriteLong", func(t *testing.T) {
+		t.Parallel()
+
+		w := &BinaryWriter{out: &bytes.Buffer{}}
+
+		require.NoError(t, w.WriteLong(1<<28))
+		require.Equal(t, int64(5), w.Offset())
+	})
+
+	t.Run("advances on WriteBytes", func(t *testing.T) {
+		t.Parallel()
+
+		w := &BinaryWriter{out: &bytes.Buffer{}}
+
+		require.NoError(t, w.WriteBytes([]byte("abc")))
+		require.Equal(t, int64(4), w.Offset())
+	})
+
+	t.Run("advances on WriteString", func(t *testing.T) {
+		t.Parallel()
+
+		w := &BinaryWriter{out: &bytes.Buffer{}}
+
+		require.NoError(t, w.WriteString("abc"))
+		require.Equal(t, int64(4), w.Offset())
+	})
+
+	t.Run("accumulates across multiple writes", func(t *testing.T) {
+		t.Parallel()
+
+		w := &BinaryWriter{out: &bytes.Buffer{}}
+
+		require.NoError(t, w.WriteBool(true))
+		require.Equal(t, int64(1), w.Offset())
+
+		require.NoError(t, w.WriteLong(1))
+		require.Equal(t, int64(2), w.Offset())
+
+		require.NoError(t, w.WriteFixed([]byte{0x01, 0x02, 0x03}))
+		require.Equal(t, int64(5), w.Offset())
+	})
+}
+
+func TestBinaryWriter_Offset_WrapsErrors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("write error annotates offset 0", func(t *testing.T) {
+		t.Parallel()
+
+		w := &BinaryWriter{out: writerFunc(func(p []byte) (int, error) {
+			return 0, io.ErrClosedPipe
+		})}
+
+		err := w.WriteBool(true)
+
+		require.Error(t, err)
+		require.ErrorIs(t, err, io.ErrClosedPipe)
+		require.Contains(t, err.Error(), "offset 0")
+		require.Equal(t, int64(0), w.Offset())
+	})
+
+	t.Run("partial write records bytes written without advancing offset", func(t *testing.T) {
+		t.Parallel()
+
+		w := &BinaryWriter{out: writerFunc(func(p []byte) (int, error) {
+			return 2, io.ErrClosedPipe
+		})}
+
+		err := w.WriteFloat(1.5)
+
+		require.Error(t, err)
+		require.ErrorIs(t, err, io.ErrClosedPipe)
+		require.Contains(t, err.Error(), "offset 0")
+		require.Equal(t, int64(0), w.Offset())
+
+		var werr *BinaryWriterError
+		require.ErrorAs(t, err, &werr)
+		require.Equal(t, int64(2), werr.BytesWritten)
+	})
+
+	t.Run("short write wraps ErrShortWrite with pre-write offset and bytes written", func(t *testing.T) {
+		t.Parallel()
+
+		w := &BinaryWriter{out: writerFunc(func(p []byte) (int, error) {
+			return 2, nil
+		})}
+
+		err := w.WriteFloat(1.5)
+
+		require.Error(t, err)
+		require.ErrorIs(t, err, io.ErrShortWrite)
+		require.Contains(t, err.Error(), "offset 0")
+		require.Equal(t, int64(0), w.Offset())
+
+		var werr *BinaryWriterError
+		require.ErrorAs(t, err, &werr)
+		require.Equal(t, int64(2), werr.BytesWritten)
+	})
+
+	t.Run("errors.As extracts BinaryWriterError with offset and bytes written", func(t *testing.T) {
+		t.Parallel()
+
+		w := &BinaryWriter{out: writerFunc(func(p []byte) (int, error) {
+			return 2, io.ErrClosedPipe
+		})}
+
+		err := w.WriteFloat(1.5)
+
+		var werr *BinaryWriterError
+		require.ErrorAs(t, err, &werr)
+		require.Equal(t, int64(0), werr.Offset)
+		require.Equal(t, int64(2), werr.BytesWritten)
+		require.ErrorIs(t, werr.Err, io.ErrClosedPipe)
+	})
+
+	t.Run("error after successful length prefix reports offset at prefix end", func(t *testing.T) {
+		t.Parallel()
+
+		calls := 0
+		w := &BinaryWriter{out: writerFunc(func(p []byte) (int, error) {
+			calls++
+			if calls == 1 {
+				return len(p), nil
+			}
+			return 1, io.ErrClosedPipe
+		})}
+
+		err := w.WriteString("abc")
+
+		require.Error(t, err)
+		require.ErrorIs(t, err, io.ErrClosedPipe)
+
+		var werr *BinaryWriterError
+		require.ErrorAs(t, err, &werr)
+		require.Equal(t, int64(1), werr.Offset)
+		require.Equal(t, int64(1), werr.BytesWritten)
+		require.Equal(t, int64(1), w.Offset())
+	})
+}
