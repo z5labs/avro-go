@@ -34,11 +34,27 @@ func (w *BinaryWriter) Offset() int64 {
 	return w.offset
 }
 
+// BinaryWriterError is returned when a BinaryWriter operation fails. It reports
+// the byte offset at which the error occurred and wraps the underlying cause
+// so callers can use errors.Is and errors.As to inspect it.
+type BinaryWriterError struct {
+	Offset int64
+	Err    error
+}
+
+func (e *BinaryWriterError) Error() string {
+	return fmt.Sprintf("avro: binary writer: offset %d: %v", e.Offset, e.Err)
+}
+
+func (e *BinaryWriterError) Unwrap() error {
+	return e.Err
+}
+
 func (w *BinaryWriter) wrapErr(err error) error {
 	if err == nil {
 		return nil
 	}
-	return fmt.Errorf("avro: binary writer: offset %d: %w", w.offset, err)
+	return &BinaryWriterError{Offset: w.offset, Err: err}
 }
 
 // WriteBool writes a boolean value to the writer. It writes 1 for true and 0 for false.
@@ -174,11 +190,27 @@ func (r *BinaryReader) Offset() int64 {
 	return r.offset
 }
 
+// BinaryReaderError is returned when a BinaryReader operation fails. It reports
+// the byte offset at which the error occurred and wraps the underlying cause
+// so callers can use errors.Is and errors.As to inspect it.
+type BinaryReaderError struct {
+	Offset int64
+	Err    error
+}
+
+func (e *BinaryReaderError) Error() string {
+	return fmt.Sprintf("avro: binary reader: offset %d: %v", e.Offset, e.Err)
+}
+
+func (e *BinaryReaderError) Unwrap() error {
+	return e.Err
+}
+
 func (r *BinaryReader) wrapErr(err error) error {
 	if err == nil {
 		return nil
 	}
-	return fmt.Errorf("avro: binary reader: offset %d: %w", r.offset, err)
+	return &BinaryReaderError{Offset: r.offset, Err: err}
 }
 
 var (

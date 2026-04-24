@@ -1530,6 +1530,23 @@ func TestBinaryReader_Offset_WrapsErrors(t *testing.T) {
 		require.Contains(t, err.Error(), "offset")
 		require.Equal(t, int64(n), r.Offset())
 	})
+
+	t.Run("errors.As extracts BinaryReaderError with offset", func(t *testing.T) {
+		t.Parallel()
+
+		r := &BinaryReader{in: readerFunc(func(p []byte) (int, error) {
+			p[0] = 0x01
+			p[1] = 0x02
+			return 2, io.EOF
+		})}
+
+		_, err := r.ReadFloat()
+
+		var rerr *BinaryReaderError
+		require.ErrorAs(t, err, &rerr)
+		require.Equal(t, int64(2), rerr.Offset)
+		require.ErrorIs(t, rerr.Err, io.ErrUnexpectedEOF)
+	})
 }
 
 func TestBinaryWriter_Offset(t *testing.T) {
@@ -1668,5 +1685,20 @@ func TestBinaryWriter_Offset_WrapsErrors(t *testing.T) {
 		require.ErrorIs(t, err, io.ErrShortWrite)
 		require.Contains(t, err.Error(), "offset 2")
 		require.Equal(t, int64(2), w.Offset())
+	})
+
+	t.Run("errors.As extracts BinaryWriterError with offset", func(t *testing.T) {
+		t.Parallel()
+
+		w := &BinaryWriter{out: writerFunc(func(p []byte) (int, error) {
+			return 2, io.ErrClosedPipe
+		})}
+
+		err := w.WriteFloat(1.5)
+
+		var werr *BinaryWriterError
+		require.ErrorAs(t, err, &werr)
+		require.Equal(t, int64(2), werr.Offset)
+		require.ErrorIs(t, werr.Err, io.ErrClosedPipe)
 	})
 }
