@@ -53,9 +53,6 @@ func (e *BinaryWriterError) Unwrap() error {
 }
 
 func (w *BinaryWriter) wrapErr(err error, bytesWritten int) error {
-	if err == nil {
-		return nil
-	}
 	return &BinaryWriterError{Offset: w.offset, BytesWritten: int64(bytesWritten), Err: err}
 }
 
@@ -209,9 +206,6 @@ func (e *BinaryReaderError) Unwrap() error {
 }
 
 func (r *BinaryReader) wrapErr(err error) error {
-	if err == nil {
-		return nil
-	}
 	return &BinaryReaderError{Offset: r.offset, Err: err}
 }
 
