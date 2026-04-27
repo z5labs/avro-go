@@ -792,6 +792,32 @@ func parseUnionOpenBrace(p *parser, u *Union) (parserAction[*Union], error) {
 }
 
 func parseUnionMember(p *parser, u *Union) (parserAction[*Union], error) {
+	tok, err, ok := p.read()
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, UnexpectedEndOfTokensError{Expected: []TokenType{TokenIdentifier}}
+	}
+
+	if tok.Type == TokenSymbol && bytes.Equal(tok.Value, []byte("`")) {
+		p.unread(tok)
+		identTok, err := p.expectIdentifier()
+		if err != nil {
+			return nil, err
+		}
+		u.Types = append(u.Types, Ident{Pos: identTok.Pos, Value: string(identTok.Value)})
+		return parseUnionMemberSep, nil
+	}
+
+	if tok.Type != TokenIdentifier {
+		return nil, UnexpectedTokenError{
+			Expected: []TokenType{TokenIdentifier},
+			Actual:   tok,
+		}
+	}
+
+	p.unread(tok)
 	typ, err := parseTypeRef(p)
 	if err != nil {
 		return nil, err

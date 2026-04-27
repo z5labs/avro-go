@@ -2044,6 +2044,51 @@ record Employee {
 			},
 		},
 		{
+			name: "escaped array keyword as first union member",
+			src:  "schema union { `array`, string };",
+			expected: &File{
+				Schema: &Schema{
+					Pos: Pos{Line: 1, Column: 1},
+					Type: &Union{
+						Types: []Type{
+							Ident{Pos: Pos{Line: 1, Column: 16}, Value: "array"},
+							Ident{Pos: Pos{Line: 1, Column: 25}, Value: "string"},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "escaped map keyword as first union member",
+			src:  "schema union { `map`, string };",
+			expected: &File{
+				Schema: &Schema{
+					Pos: Pos{Line: 1, Column: 1},
+					Type: &Union{
+						Types: []Type{
+							Ident{Pos: Pos{Line: 1, Column: 16}, Value: "map"},
+							Ident{Pos: Pos{Line: 1, Column: 23}, Value: "string"},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "escaped union keyword as first union member",
+			src:  "schema union { `union`, string };",
+			expected: &File{
+				Schema: &Schema{
+					Pos: Pos{Line: 1, Column: 1},
+					Type: &Union{
+						Types: []Type{
+							Ident{Pos: Pos{Line: 1, Column: 16}, Value: "union"},
+							Ident{Pos: Pos{Line: 1, Column: 25}, Value: "string"},
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "escaped type in map",
 			src:  "schema map<`union`>;",
 			expected: &File{
