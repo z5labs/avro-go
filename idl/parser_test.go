@@ -716,6 +716,26 @@ enum Suit { HEARTS, DIAMONDS }`,
 			},
 		},
 		{
+			name: "union schema with complex types",
+			src:  `schema union { null, map<string>, array<string> };`,
+			expected: &File{
+				Schema: &Schema{
+					Pos: Pos{Line: 1, Column: 1},
+					Type: &Union{
+						Types: []Type{
+							Ident{Pos: Pos{Line: 1, Column: 16}, Value: "null"},
+							&Map{
+								Values: &Ident{Pos: Pos{Line: 1, Column: 26}, Value: "string"},
+							},
+							&Array{
+								Items: Ident{Pos: Pos{Line: 1, Column: 41}, Value: "string"},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "union schema single type",
 			src:  `schema union { int };`,
 			expected: &File{
@@ -951,6 +971,40 @@ record Employee {
 										Types: []Type{
 											Ident{Pos: Pos{Line: 3, Column: 11}, Value: "null"},
 											Ident{Pos: Pos{Line: 3, Column: 17}, Value: "string"},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "record field with union type containing null and array",
+			src: `schema int;
+record Employee {
+  union { null, array<string>, array<Department> } tags;
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Employee",
+							Fields: []*Field{
+								{
+									Name: "tags",
+									Type: &Union{
+										Types: []Type{
+											Ident{Pos: Pos{Line: 3, Column: 11}, Value: "null"},
+											&Array{
+												Items: Ident{Pos: Pos{Line: 3, Column: 23}, Value: "string"},
+											},
+											&Array{
+												Items: Ident{Pos: Pos{Line: 3, Column: 38}, Value: "Department"},
+											},
 										},
 									},
 								},
