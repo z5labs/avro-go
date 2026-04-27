@@ -691,6 +691,8 @@ func parseTypeRef(p *parser) (Type, error) {
 		return nil, err
 	}
 	switch string(tok.Value) {
+	case "array":
+		return parseArrayType(p)
 	case "map":
 		return parseMapType(p)
 	case "union":
@@ -698,6 +700,37 @@ func parseTypeRef(p *parser) (Type, error) {
 	default:
 		return Ident{Pos: tok.Pos, Value: string(tok.Value)}, nil
 	}
+}
+
+func parseArrayType(p *parser) (*Array, error) {
+	tok, err := p.expect(TokenSymbol)
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Equal(tok.Value, []byte("<")) {
+		return nil, UnexpectedTokenError{
+			Expected: []TokenType{TokenSymbol},
+			Actual:   tok,
+		}
+	}
+
+	items, err := parseTypeRef(p)
+	if err != nil {
+		return nil, err
+	}
+
+	tok, err = p.expect(TokenSymbol)
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Equal(tok.Value, []byte(">")) {
+		return nil, UnexpectedTokenError{
+			Expected: []TokenType{TokenSymbol},
+			Actual:   tok,
+		}
+	}
+
+	return &Array{Items: items}, nil
 }
 
 func parseMapType(p *parser) (*Map, error) {
@@ -759,6 +792,32 @@ func parseUnionOpenBrace(p *parser, u *Union) (parserAction[*Union], error) {
 }
 
 func parseUnionMember(p *parser, u *Union) (parserAction[*Union], error) {
+	tok, err, ok := p.read()
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, UnexpectedEndOfTokensError{Expected: []TokenType{TokenIdentifier}}
+	}
+
+	if tok.Type == TokenSymbol && bytes.Equal(tok.Value, []byte("`")) {
+		p.unread(tok)
+		identTok, err := p.expectIdentifier()
+		if err != nil {
+			return nil, err
+		}
+		u.Types = append(u.Types, Ident{Pos: identTok.Pos, Value: string(identTok.Value)})
+		return parseUnionMemberSep, nil
+	}
+
+	if tok.Type != TokenIdentifier {
+		return nil, UnexpectedTokenError{
+			Expected: []TokenType{TokenIdentifier},
+			Actual:   tok,
+		}
+	}
+
+	p.unread(tok)
 	typ, err := parseTypeRef(p)
 	if err != nil {
 		return nil, err
@@ -799,7 +858,6 @@ func parseUnionMemberOrClose(p *parser, u *Union) (parserAction[*Union], error) 
 		if bytes.Equal(tok.Value, []byte("}")) {
 			return nil, nil
 		}
-		// Check for escaped identifier starting with backtick
 		if bytes.Equal(tok.Value, []byte("`")) {
 			p.unread(tok)
 			identTok, err := p.expectIdentifier()
@@ -822,22 +880,12 @@ func parseUnionMemberOrClose(p *parser, u *Union) (parserAction[*Union], error) 
 		}
 	}
 
-	switch string(tok.Value) {
-	case "map":
-		m, err := parseMapType(p)
-		if err != nil {
-			return nil, err
-		}
-		u.Types = append(u.Types, m)
-	case "union":
-		nested, err := parseUnionType(p)
-		if err != nil {
-			return nil, err
-		}
-		u.Types = append(u.Types, nested)
-	default:
-		u.Types = append(u.Types, Ident{Pos: tok.Pos, Value: string(tok.Value)})
+	p.unread(tok)
+	typ, err := parseTypeRef(p)
+	if err != nil {
+		return nil, err
 	}
+	u.Types = append(u.Types, typ)
 	return parseUnionMemberSep, nil
 }
 
