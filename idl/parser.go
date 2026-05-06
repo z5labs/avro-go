@@ -191,6 +191,7 @@ type File struct {
 // UnexpectedEndOfTokensError is the error returned by the parser when it reaches the end of the tokens unexpectedly.
 type UnexpectedEndOfTokensError struct {
 	Expected []TokenType
+	Pos      Pos
 }
 
 // Error implements the [error] interface.
@@ -199,7 +200,12 @@ func (e UnexpectedEndOfTokensError) Error() string {
 	for _, t := range e.Expected {
 		expected = append(expected, t.String())
 	}
-	return "unexpected end of tokens, expected one of: " + strings.Join(expected, ", ")
+	return fmt.Sprintf(
+		"unexpected end of tokens at line %d, column %d, expected one of: %s",
+		e.Pos.Line,
+		e.Pos.Column,
+		strings.Join(expected, ", "),
+	)
 }
 
 // UnexpectedTokenError is the error returned by the parser when it encounters an unexpected token.
@@ -214,7 +220,13 @@ func (e UnexpectedTokenError) Error() string {
 	for _, t := range e.Expected {
 		expected = append(expected, t.String())
 	}
-	return "unexpected token: " + e.Actual.String() + ", expected one of: " + strings.Join(expected, ", ")
+	return fmt.Sprintf(
+		"unexpected token at line %d, column %d: %s, expected one of: %s",
+		e.Actual.Pos.Line,
+		e.Actual.Pos.Column,
+		e.Actual.String(),
+		strings.Join(expected, ", "),
+	)
 }
 
 // UnterminatedEscapedIdentifierError is the error returned by the parser when it encounters an
@@ -235,7 +247,10 @@ func Parse(r io.Reader) (file *File, err error) {
 
 	file = &File{}
 
-	p := &parser{next: next}
+	p := &parser{
+		next: next,
+		pos:  Pos{Line: 1, Column: 1},
+	}
 
 	for action := parseFile; action != nil && err == nil; {
 		action, err = action(p, file)
@@ -247,6 +262,7 @@ func Parse(r io.Reader) (file *File, err error) {
 type parser struct {
 	next    func() (Token, error, bool)
 	pending *Token
+	pos     Pos
 }
 
 func (p *parser) unread(tok Token) {
@@ -257,9 +273,14 @@ func (p *parser) read() (Token, error, bool) {
 	if p.pending != nil {
 		tok := *p.pending
 		p.pending = nil
+		p.pos = tok.Pos
 		return tok, nil, true
 	}
-	return p.next()
+	tok, err, ok := p.next()
+	if ok {
+		p.pos = tok.Pos
+	}
+	return tok, err, ok
 }
 
 func (p *parser) peek() (Token, error, bool) {
@@ -283,7 +304,7 @@ func (p *parser) expect(expected ...TokenType) (Token, error) {
 		return Token{}, err
 	}
 	if !ok {
-		return Token{}, UnexpectedEndOfTokensError{Expected: expected}
+		return Token{}, p.unexpectedEndOfTokens(expected...)
 	}
 
 	if slices.Contains(expected, tok.Type) {
@@ -305,7 +326,7 @@ func (p *parser) expectIdentifier() (Token, error) {
 		return Token{}, err
 	}
 	if !ok {
-		return Token{}, UnexpectedEndOfTokensError{Expected: []TokenType{TokenIdentifier}}
+		return Token{}, p.unexpectedEndOfTokens(TokenIdentifier)
 	}
 
 	// Regular identifier
@@ -338,6 +359,13 @@ func (p *parser) expectIdentifier() (Token, error) {
 	return Token{}, UnexpectedTokenError{
 		Expected: []TokenType{TokenIdentifier},
 		Actual:   tok,
+	}
+}
+
+func (p *parser) unexpectedEndOfTokens(expected ...TokenType) UnexpectedEndOfTokensError {
+	return UnexpectedEndOfTokensError{
+		Expected: expected,
+		Pos:      p.pos,
 	}
 }
 
@@ -691,7 +719,7 @@ func parseTypeRef(p *parser) (Type, error) {
 		return nil, err
 	}
 	if !ok {
-		return nil, UnexpectedEndOfTokensError{Expected: []TokenType{TokenIdentifier}}
+		return nil, p.unexpectedEndOfTokens(TokenIdentifier)
 	}
 	if tok.Type == TokenSymbol && bytes.Equal(tok.Value, []byte("`")) {
 		p.unread(tok)
@@ -815,7 +843,7 @@ func parseUnionMember(p *parser, u *Union) (parserAction[*Union], error) {
 		return nil, err
 	}
 	if !ok {
-		return nil, UnexpectedEndOfTokensError{Expected: []TokenType{TokenIdentifier}}
+		return nil, p.unexpectedEndOfTokens(TokenIdentifier)
 	}
 
 	if tok.Type == TokenSymbol && bytes.Equal(tok.Value, []byte("`")) {
@@ -868,7 +896,7 @@ func parseUnionMemberOrClose(p *parser, u *Union) (parserAction[*Union], error) 
 		return nil, err
 	}
 	if !ok {
-		return nil, UnexpectedEndOfTokensError{Expected: []TokenType{TokenIdentifier, TokenSymbol}}
+		return nil, p.unexpectedEndOfTokens(TokenIdentifier, TokenSymbol)
 	}
 
 	// Check for closing brace
@@ -1112,7 +1140,7 @@ func parseEnumValueOrClose(p *parser, enum *Enum) (parserAction[*Enum], error) {
 		return nil, err
 	}
 	if !ok {
-		return nil, UnexpectedEndOfTokensError{Expected: []TokenType{TokenIdentifier, TokenSymbol}}
+		return nil, p.unexpectedEndOfTokens(TokenIdentifier, TokenSymbol)
 	}
 
 	// Check for closing brace
@@ -1274,7 +1302,7 @@ func parseRecordFieldNullableOrName(field *Field) parserAction[*Record] {
 			return nil, err
 		}
 		if !ok {
-			return nil, UnexpectedEndOfTokensError{Expected: []TokenType{TokenIdentifier, TokenSymbol, TokenAnnotation}}
+			return nil, p.unexpectedEndOfTokens(TokenIdentifier, TokenSymbol, TokenAnnotation)
 		}
 
 		switch tok.Type {
@@ -1532,7 +1560,7 @@ func parseRecordFieldTypeOrClose(p *parser, rec *Record) (parserAction[*Record],
 		return nil, err
 	}
 	if !ok {
-		return nil, UnexpectedEndOfTokensError{Expected: []TokenType{TokenIdentifier, TokenSymbol}}
+		return nil, p.unexpectedEndOfTokens(TokenIdentifier, TokenSymbol)
 	}
 
 	// Check for closing brace

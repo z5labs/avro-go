@@ -22,9 +22,12 @@ func TestParserErrors(t *testing.T) {
 		expectedErr    error
 	}{
 		{
-			name:        "empty input",
-			src:         ``,
-			expectedErr: UnexpectedEndOfTokensError{Expected: []TokenType{TokenIdentifier, TokenComment, TokenDocComment}},
+			name: "empty input",
+			src:  ``,
+			expectedErr: UnexpectedEndOfTokensError{
+				Expected: []TokenType{TokenIdentifier, TokenComment, TokenDocComment},
+				Pos:      Pos{Line: 1, Column: 1},
+			},
 		},
 		{
 			name:           "file starts with unrecognized keyword",
@@ -46,9 +49,12 @@ invalid int;`,
 			},
 		},
 		{
-			name:        "schema type missing semicolon",
-			src:         "schema int ",
-			expectedErr: UnexpectedEndOfTokensError{Expected: []TokenType{TokenSymbol}},
+			name: "schema type missing semicolon",
+			src:  "schema int ",
+			expectedErr: UnexpectedEndOfTokensError{
+				Expected: []TokenType{TokenSymbol},
+				Pos:      Pos{Line: 1, Column: 8},
+			},
 		},
 		{
 			name: "schema type followed by wrong symbol",
@@ -100,17 +106,24 @@ enum Suit { };`,
 enum Suit { HEARTS } =`,
 			expectedErr: UnexpectedEndOfTokensError{
 				Expected: []TokenType{TokenIdentifier},
+				Pos:      Pos{Line: 2, Column: 22},
 			},
 		},
 		{
-			name:        "namespace missing semicolon",
-			src:         "namespace com.example ",
-			expectedErr: UnexpectedEndOfTokensError{Expected: []TokenType{TokenSymbol}},
+			name: "namespace missing semicolon",
+			src:  "namespace com.example ",
+			expectedErr: UnexpectedEndOfTokensError{
+				Expected: []TokenType{TokenSymbol},
+				Pos:      Pos{Line: 1, Column: 11},
+			},
 		},
 		{
-			name:        "namespace with no following tokens",
-			src:         `namespace com.example;`,
-			expectedErr: UnexpectedEndOfTokensError{Expected: []TokenType{TokenIdentifier, TokenComment, TokenDocComment}},
+			name: "namespace with no following tokens",
+			src:  `namespace com.example;`,
+			expectedErr: UnexpectedEndOfTokensError{
+				Expected: []TokenType{TokenIdentifier, TokenComment, TokenDocComment},
+				Pos:      Pos{Line: 1, Column: 22},
+			},
 		},
 		{
 			name: "fixed missing name",
@@ -267,6 +280,7 @@ record Employee {
 				return
 			}
 			require.Equal(t, tc.expectedErr, err)
+			require.EqualError(t, err, tc.expectedErr.Error())
 		})
 	}
 }
