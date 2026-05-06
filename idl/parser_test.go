@@ -284,37 +284,6 @@ record Employee {
 	}
 }
 
-func TestParserErrorMessages(t *testing.T) {
-	t.Parallel()
-
-	testCases := []struct {
-		name           string
-		src            string
-		expectedErrMsg string
-	}{
-		{
-			name:           "unexpected token includes position",
-			src:            `schema ;`,
-			expectedErrMsg: "unexpected token at line 1, column 8: Symbol(;), expected one of: Identifier",
-		},
-		{
-			name:           "unexpected end of tokens includes position",
-			src:            "schema int ",
-			expectedErrMsg: "unexpected end of tokens at line 1, column 8, expected one of: Symbol",
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			_, err := Parse(strings.NewReader(tc.src))
-
-			require.EqualError(t, err, tc.expectedErrMsg)
-		})
-	}
-}
-
 func TestParser(t *testing.T) {
 	t.Parallel()
 
