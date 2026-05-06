@@ -686,10 +686,28 @@ func parseSchemaType[T any](f func(Type) (parserAction[T], error)) parserAction[
 }
 
 func parseTypeRef(p *parser) (Type, error) {
-	tok, err := p.expectIdentifier()
+	tok, err, ok := p.read()
 	if err != nil {
 		return nil, err
 	}
+	if !ok {
+		return nil, UnexpectedEndOfTokensError{Expected: []TokenType{TokenIdentifier}}
+	}
+	if tok.Type == TokenSymbol && bytes.Equal(tok.Value, []byte("`")) {
+		p.unread(tok)
+		tok, err = p.expectIdentifier()
+		if err != nil {
+			return nil, err
+		}
+		return Ident{Pos: tok.Pos, Value: string(tok.Value)}, nil
+	}
+	if tok.Type != TokenIdentifier {
+		return nil, UnexpectedTokenError{
+			Expected: []TokenType{TokenIdentifier},
+			Actual:   tok,
+		}
+	}
+
 	switch string(tok.Value) {
 	case "array":
 		return parseArrayType(p)

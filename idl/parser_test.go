@@ -1101,6 +1101,31 @@ record Employee {
 			},
 		},
 		{
+			name: "schema with record type with escaped keyword field after first field",
+			src:  "schema int;\nrecord Employee {\n  string name;\n  `array` data;\n}",
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Employee",
+							Fields: []*Field{
+								{
+									Name: "name",
+									Type: Ident{Pos: Pos{Line: 3, Column: 3}, Value: "string"},
+								},
+								{
+									Name: "data",
+									Type: Ident{Pos: Pos{Line: 4, Column: 3}, Value: "array"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "record field with union type containing null and array",
 			src: `schema int;
 record Employee {
