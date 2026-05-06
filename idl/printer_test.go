@@ -1322,6 +1322,16 @@ record Person {
 }
 `,
 		},
+		{
+			name: "record with non-first nullable map field",
+			src: `schema int;
+record Person {
+  string name;
+  map<string>? metadata;
+  array<string> tags;
+}
+`,
+		},
 	}
 
 	for _, tc := range testCases {

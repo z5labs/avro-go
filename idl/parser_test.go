@@ -1065,6 +1065,42 @@ record Employee {
 			},
 		},
 		{
+			name: "schema with record type with nullable map field after first field",
+			src: `schema int;
+record Employee {
+  string name;
+  map<string>? metadata;
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Employee",
+							Fields: []*Field{
+								{
+									Name: "name",
+									Type: Ident{Pos: Pos{Line: 3, Column: 3}, Value: "string"},
+								},
+								{
+									Name: "metadata",
+									Type: &Union{
+										Types: []Type{
+											Ident{Value: "null"},
+											&Map{
+												Values: &Ident{Pos: Pos{Line: 4, Column: 7}, Value: "string"},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "record field with union type containing null and array",
 			src: `schema int;
 record Employee {
