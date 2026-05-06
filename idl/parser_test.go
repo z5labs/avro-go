@@ -41,18 +41,16 @@ invalid int;`,
 			expectedErrMsg: "schema definition must follow namespace declaration",
 		},
 		{
-			name:           "schema missing type identifier",
-			src:            `schema ;`,
-			expectedErrMsg: "unexpected token at line 1, column 8: Symbol(;), expected one of: Identifier",
+			name: "schema missing type identifier",
+			src:  `schema ;`,
 			expectedErr: UnexpectedTokenError{
 				Expected: []TokenType{TokenIdentifier},
 				Actual:   Token{Pos: Pos{Line: 1, Column: 8}, Type: TokenSymbol, Value: []byte(";")},
 			},
 		},
 		{
-			name:           "schema type missing semicolon",
-			src:            "schema int ",
-			expectedErrMsg: "unexpected end of tokens at line 1, column 8, expected one of: Symbol",
+			name: "schema type missing semicolon",
+			src:  "schema int ",
 			expectedErr: UnexpectedEndOfTokensError{
 				Expected: []TokenType{TokenSymbol},
 				Pos:      Pos{Line: 1, Column: 8},
@@ -277,13 +275,42 @@ record Employee {
 
 			_, err := Parse(strings.NewReader(tc.src))
 
-			require.Error(t, err)
-			if tc.expectedErr != nil {
-				require.Equal(t, tc.expectedErr, err)
-			}
 			if tc.expectedErrMsg != "" {
 				require.EqualError(t, err, tc.expectedErrMsg)
+				return
 			}
+			require.Equal(t, tc.expectedErr, err)
+		})
+	}
+}
+
+func TestParserErrorMessages(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name           string
+		src            string
+		expectedErrMsg string
+	}{
+		{
+			name:           "unexpected token includes position",
+			src:            `schema ;`,
+			expectedErrMsg: "unexpected token at line 1, column 8: Symbol(;), expected one of: Identifier",
+		},
+		{
+			name:           "unexpected end of tokens includes position",
+			src:            "schema int ",
+			expectedErrMsg: "unexpected end of tokens at line 1, column 8, expected one of: Symbol",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := Parse(strings.NewReader(tc.src))
+
+			require.EqualError(t, err, tc.expectedErrMsg)
 		})
 	}
 }
