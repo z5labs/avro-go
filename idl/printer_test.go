@@ -1312,6 +1312,16 @@ record Person {
 }
 `,
 		},
+		{
+			name: "record with non-first array field",
+			src: `schema int;
+record Person {
+  string name;
+  array<string>? tags;
+  map<string> metadata;
+}
+`,
+		},
 	}
 
 	for _, tc := range testCases {
