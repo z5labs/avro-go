@@ -981,6 +981,151 @@ record Employee {
 			},
 		},
 		{
+			name: "schema with record type with complex non-first fields",
+			src: `schema int;
+record Employee {
+  string name;
+  map<string> metadata;
+  array<string> tags;
+  union { null, string } nickname;
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Employee",
+							Fields: []*Field{
+								{
+									Name: "name",
+									Type: Ident{Pos: Pos{Line: 3, Column: 3}, Value: "string"},
+								},
+								{
+									Name: "metadata",
+									Type: &Map{
+										Values: &Ident{Pos: Pos{Line: 4, Column: 7}, Value: "string"},
+									},
+								},
+								{
+									Name: "tags",
+									Type: &Array{
+										Items: Ident{Pos: Pos{Line: 5, Column: 9}, Value: "string"},
+									},
+								},
+								{
+									Name: "nickname",
+									Type: &Union{
+										Types: []Type{
+											Ident{Pos: Pos{Line: 6, Column: 11}, Value: "null"},
+											Ident{Pos: Pos{Line: 6, Column: 17}, Value: "string"},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "schema with record type with nullable array field after first field",
+			src: `schema int;
+record Employee {
+  string name;
+  array<string>? tags;
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Employee",
+							Fields: []*Field{
+								{
+									Name: "name",
+									Type: Ident{Pos: Pos{Line: 3, Column: 3}, Value: "string"},
+								},
+								{
+									Name: "tags",
+									Type: &Union{
+										Types: []Type{
+											Ident{Value: "null"},
+											&Array{
+												Items: Ident{Pos: Pos{Line: 4, Column: 9}, Value: "string"},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "schema with record type with nullable map field after first field",
+			src: `schema int;
+record Employee {
+  string name;
+  map<string>? metadata;
+}`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Employee",
+							Fields: []*Field{
+								{
+									Name: "name",
+									Type: Ident{Pos: Pos{Line: 3, Column: 3}, Value: "string"},
+								},
+								{
+									Name: "metadata",
+									Type: &Union{
+										Types: []Type{
+											Ident{Value: "null"},
+											&Map{
+												Values: &Ident{Pos: Pos{Line: 4, Column: 7}, Value: "string"},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "schema with record type with escaped keyword field after first field",
+			src:  "schema int;\nrecord Employee {\n  string name;\n  `array` data;\n}",
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Record{
+							Name: "Employee",
+							Fields: []*Field{
+								{
+									Name: "name",
+									Type: Ident{Pos: Pos{Line: 3, Column: 3}, Value: "string"},
+								},
+								{
+									Name: "data",
+									Type: Ident{Pos: Pos{Line: 4, Column: 3}, Value: "array"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "record field with union type containing null and array",
 			src: `schema int;
 record Employee {

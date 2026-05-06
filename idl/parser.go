@@ -686,10 +686,28 @@ func parseSchemaType[T any](f func(Type) (parserAction[T], error)) parserAction[
 }
 
 func parseTypeRef(p *parser) (Type, error) {
-	tok, err := p.expectIdentifier()
+	tok, err, ok := p.read()
 	if err != nil {
 		return nil, err
 	}
+	if !ok {
+		return nil, UnexpectedEndOfTokensError{Expected: []TokenType{TokenIdentifier}}
+	}
+	if tok.Type == TokenSymbol && bytes.Equal(tok.Value, []byte("`")) {
+		p.unread(tok)
+		tok, err = p.expectIdentifier()
+		if err != nil {
+			return nil, err
+		}
+		return Ident{Pos: tok.Pos, Value: string(tok.Value)}, nil
+	}
+	if tok.Type != TokenIdentifier {
+		return nil, UnexpectedTokenError{
+			Expected: []TokenType{TokenIdentifier},
+			Actual:   tok,
+		}
+	}
+
 	switch string(tok.Value) {
 	case "array":
 		return parseArrayType(p)
@@ -1522,48 +1540,21 @@ func parseRecordFieldTypeOrClose(p *parser, rec *Record) (parserAction[*Record],
 		if bytes.Equal(tok.Value, []byte("}")) {
 			return nil, nil
 		}
-		// Check for escaped identifier starting with backtick
-		if bytes.Equal(tok.Value, []byte("`")) {
-			p.unread(tok)
-			identTok, err := p.expectIdentifier()
-			if err != nil {
-				return nil, err
-			}
-			field := &Field{Doc: doc, Type: Ident{Pos: identTok.Pos, Value: string(identTok.Value)}}
-			applyAnnotationsToField(field, preTypeAnnotations)
-			rec.Fields = append(rec.Fields, field)
-			return parseRecordFieldNullableOrName(field), nil
-		}
+	}
+
+	if tok.Type != TokenIdentifier && (tok.Type != TokenSymbol || !bytes.Equal(tok.Value, []byte("`"))) {
 		return nil, UnexpectedTokenError{
 			Expected: []TokenType{TokenIdentifier, TokenSymbol},
 			Actual:   tok,
 		}
 	}
 
-	if tok.Type != TokenIdentifier {
-		return nil, UnexpectedTokenError{
-			Expected: []TokenType{TokenIdentifier, TokenSymbol},
-			Actual:   tok,
-		}
+	p.unread(tok)
+	typ, err := parseTypeRef(p)
+	if err != nil {
+		return nil, err
 	}
 
-	var typ Type
-	switch string(tok.Value) {
-	case "map":
-		m, err := parseMapType(p)
-		if err != nil {
-			return nil, err
-		}
-		typ = m
-	case "union":
-		u, err := parseUnionType(p)
-		if err != nil {
-			return nil, err
-		}
-		typ = u
-	default:
-		typ = Ident{Pos: tok.Pos, Value: string(tok.Value)}
-	}
 	field := &Field{Doc: doc, Type: typ}
 	applyAnnotationsToField(field, preTypeAnnotations)
 	rec.Fields = append(rec.Fields, field)
