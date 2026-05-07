@@ -41,17 +41,6 @@ func (e UnknownTypeError) Error() string {
 	return fmt.Sprintf("avro: unknown schema type %q", e.Type)
 }
 
-// UnknownLogicalTypeError reports a JSON schema with a "logicalType" the
-// parser does not recognize.
-type UnknownLogicalTypeError struct {
-	Underlying  string
-	LogicalType string
-}
-
-func (e UnknownLogicalTypeError) Error() string {
-	return fmt.Sprintf("avro: unknown logicalType %q on %q", e.LogicalType, e.Underlying)
-}
-
 // ErrEmptyJSON is returned when ParseJSON is given empty input.
 var ErrEmptyJSON = errors.New("avro: empty JSON")
 
@@ -535,9 +524,21 @@ func parseFixed(obj map[string]json.RawMessage, namespace string) (Fixed, error)
 	return f, nil
 }
 
+// parseLogical decodes an Avro JSON object whose declared "logicalType" field
+// is non-empty. Per the Avro spec, when the underlying type does not match the
+// logical type's required base (or the logical type is unknown), the logical
+// type is ignored and the underlying type is returned as the schema.
 func parseLogical(under, lt string, obj map[string]json.RawMessage, namespace string) (Schema, error) {
+	underlying, err := parseLogicalUnderlying(under, obj, namespace)
+	if err != nil {
+		return nil, err
+	}
+
 	switch lt {
 	case "decimal":
+		if under != "bytes" && under != "fixed" {
+			return underlying, nil
+		}
 		if _, ok := obj["precision"]; !ok {
 			return nil, MissingFieldError{Type: "decimal", Field: "precision"}
 		}
@@ -548,42 +549,80 @@ func parseLogical(under, lt string, obj map[string]json.RawMessage, namespace st
 		if err := unmarshalIfPresent(obj, "scale", &scale); err != nil {
 			return nil, err
 		}
-		switch under {
-		case "bytes":
-			return Decimal{Precision: precision, Scale: scale, Underlying: Bytes{}}, nil
-		case "fixed":
-			fx, err := parseFixed(obj, namespace)
-			if err != nil {
-				return nil, err
-			}
-			return Decimal{Precision: precision, Scale: scale, Underlying: fx}, nil
-		default:
-			return nil, UnknownLogicalTypeError{Underlying: under, LogicalType: lt}
-		}
+		return Decimal{Precision: precision, Scale: scale, Underlying: underlying}, nil
 	case "uuid":
+		if under != "string" {
+			return underlying, nil
+		}
 		return UUID{}, nil
 	case "date":
+		if under != "int" {
+			return underlying, nil
+		}
 		return Date{}, nil
 	case "time-millis":
+		if under != "int" {
+			return underlying, nil
+		}
 		return TimeMillis{}, nil
 	case "time-micros":
+		if under != "long" {
+			return underlying, nil
+		}
 		return TimeMicros{}, nil
 	case "timestamp-millis":
+		if under != "long" {
+			return underlying, nil
+		}
 		return TimestampMillis{}, nil
 	case "timestamp-micros":
+		if under != "long" {
+			return underlying, nil
+		}
 		return TimestampMicros{}, nil
 	case "timestamp-nanos":
+		if under != "long" {
+			return underlying, nil
+		}
 		return TimestampNanos{}, nil
 	case "local-timestamp-millis":
+		if under != "long" {
+			return underlying, nil
+		}
 		return LocalTimestampMillis{}, nil
 	case "local-timestamp-micros":
+		if under != "long" {
+			return underlying, nil
+		}
 		return LocalTimestampMicros{}, nil
 	case "local-timestamp-nanos":
+		if under != "long" {
+			return underlying, nil
+		}
 		return LocalTimestampNanos{}, nil
 	case "duration":
+		fx, ok := underlying.(Fixed)
+		if !ok || fx.Size != 12 {
+			return underlying, nil
+		}
 		return Duration{}, nil
 	default:
-		return nil, UnknownLogicalTypeError{Underlying: under, LogicalType: lt}
+		// Unknown logical type: per spec, ignore and use the underlying type.
+		return underlying, nil
+	}
+}
+
+// parseLogicalUnderlying resolves the "type" field of a logical-type schema
+// into its base Schema. Avro logical types are layered only on primitives or
+// fixed; any other value of under is rejected.
+func parseLogicalUnderlying(under string, obj map[string]json.RawMessage, namespace string) (Schema, error) {
+	switch under {
+	case "null", "boolean", "int", "long", "float", "double", "bytes", "string":
+		return parseTypeName(under, namespace), nil
+	case "fixed":
+		return parseFixed(obj, namespace)
+	default:
+		return nil, UnknownTypeError{Type: under}
 	}
 }
 

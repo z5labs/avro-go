@@ -173,3 +173,68 @@ func TestRoundTrip_RecursiveRecord(t *testing.T) {
 	got := roundTrip(t, schema, v)
 	require.Equal(t, v, got)
 }
+
+// TestRoundTrip_RefInheritsEnclosingNamespace covers the Avro spec rule that
+// an unqualified Ref resolves against the enclosing record's namespace, even
+// when the schema is built programmatically (no JSON parsing to fill in
+// inherited Namespace fields).
+func TestRoundTrip_RefInheritsEnclosingNamespace(t *testing.T) {
+	t.Parallel()
+
+	schema := avro.Record{
+		Name:      "Node",
+		Namespace: "com.example",
+		Fields: []*avro.Field{
+			{Name: "v", Type: avro.Long{}},
+			// Ref carries no Namespace; it must inherit "com.example".
+			{Name: "next", Type: avro.Union{Types: []avro.Schema{avro.Null{}, avro.Ref{Name: "Node"}}}},
+		},
+	}
+	v := Record{Fields: []Field{
+		{Name: "v", Value: Long(7)},
+		{Name: "next", Value: Union{Index: 0, Value: Null{}}},
+	}}
+	got := roundTrip(t, schema, v)
+	require.Equal(t, v, got)
+}
+
+// TestRoundTrip_DecimalOverFixedRefReuse verifies that a decimal-over-fixed
+// registers its underlying fixed name, so a later Ref to that name resolves
+// to the same decimal plan rather than a raw fixed-bytes plan.
+func TestRoundTrip_DecimalOverFixedRefReuse(t *testing.T) {
+	t.Parallel()
+
+	dec := avro.Decimal{
+		Precision:  9,
+		Scale:      2,
+		Underlying: avro.Fixed{Name: "Money", Namespace: "com.example", Size: 8},
+	}
+	schema := avro.Record{
+		Name:      "Order",
+		Namespace: "com.example",
+		Fields: []*avro.Field{
+			{Name: "price", Type: dec},
+			{Name: "tax", Type: avro.Ref{Name: "Money"}},
+		},
+	}
+	v := Record{Fields: []Field{
+		{Name: "price", Value: Decimal{Unscaled: big.NewInt(12345)}},
+		{Name: "tax", Value: Decimal{Unscaled: big.NewInt(678)}},
+	}}
+
+	enc, err := NewEncoder(schema)
+	require.NoError(t, err)
+	var buf bytes.Buffer
+	require.NoError(t, enc.Encode(&buf, v))
+
+	d, err := NewDecoder(schema)
+	require.NoError(t, err)
+	out, err := d.Decode(&buf)
+	require.NoError(t, err)
+
+	rec := out.(Record)
+	gotPrice := rec.Fields[0].Value.(Decimal)
+	gotTax := rec.Fields[1].Value.(Decimal)
+	require.Equal(t, 0, big.NewInt(12345).Cmp(gotPrice.Unscaled))
+	require.Equal(t, 0, big.NewInt(678).Cmp(gotTax.Unscaled))
+}

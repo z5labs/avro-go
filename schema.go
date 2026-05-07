@@ -87,12 +87,11 @@ type Field struct {
 
 // Record is a named record schema.
 type Record struct {
-	Name       string
-	Namespace  string
-	Doc        string
-	Aliases    []string
-	Fields     []*Field
-	Properties map[string]any
+	Name      string
+	Namespace string
+	Doc       string
+	Aliases   []string
+	Fields    []*Field
 }
 
 func (Record) schema() {}

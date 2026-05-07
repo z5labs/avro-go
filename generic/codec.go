@@ -22,7 +22,11 @@ type planNode struct {
 // compileSchema validates s and produces matching encode/decode functions.
 // Validation and plan construction happen in a single walk so that NewEncoder
 // and NewDecoder report identical schema-level errors.
-func compileSchema(s avro.Schema, ctx *compileCtx) (*planNode, error) {
+//
+// namespace is the enclosing Avro namespace inherited from a parent named type.
+// Unqualified Refs and inline named types use it when their own Namespace is
+// empty, matching Avro's name resolution rules.
+func compileSchema(s avro.Schema, ctx *compileCtx, namespace string) (*planNode, error) {
 	switch t := s.(type) {
 	case avro.Null:
 		return nullPlan, nil
@@ -41,21 +45,21 @@ func compileSchema(s avro.Schema, ctx *compileCtx) (*planNode, error) {
 	case avro.String:
 		return stringPlan, nil
 	case avro.Ref:
-		return compileRef(t, ctx)
+		return compileRef(t, ctx, namespace)
 	case avro.Record:
-		return compileRecord(t, ctx)
+		return compileRecord(t, ctx, namespace)
 	case avro.Enum:
-		return compileEnum(t, ctx)
+		return compileEnum(t, ctx, namespace)
 	case avro.Array:
-		return compileArray(t, ctx)
+		return compileArray(t, ctx, namespace)
 	case avro.Map:
-		return compileMap(t, ctx)
+		return compileMap(t, ctx, namespace)
 	case avro.Union:
-		return compileUnion(t, ctx)
+		return compileUnion(t, ctx, namespace)
 	case avro.Fixed:
-		return compileFixed(t, ctx)
+		return compileFixed(t, ctx, namespace)
 	case avro.Decimal:
-		return compileDecimal(t, ctx)
+		return compileDecimal(t, ctx, namespace)
 	case avro.UUID:
 		return uuidPlan, nil
 	case avro.Date:
@@ -211,8 +215,12 @@ var (
 
 // ---- composite plans ----
 
-func compileRef(r avro.Ref, ctx *compileCtx) (*planNode, error) {
-	entry, err := ctx.resolveNamed(r.Name, r.Namespace)
+func compileRef(r avro.Ref, ctx *compileCtx, namespace string) (*planNode, error) {
+	ns := r.Namespace
+	if ns == "" {
+		ns = namespace
+	}
+	entry, err := ctx.resolveNamed(r.Name, ns)
 	if err != nil {
 		return nil, err
 	}
@@ -222,14 +230,18 @@ func compileRef(r avro.Ref, ctx *compileCtx) (*planNode, error) {
 	}, nil
 }
 
-func compileRecord(r avro.Record, ctx *compileCtx) (*planNode, error) {
+func compileRecord(r avro.Record, ctx *compileCtx, namespace string) (*planNode, error) {
 	if r.Name == "" {
 		return nil, MissingNameError{Kind: "record"}
+	}
+	ns := r.Namespace
+	if ns == "" {
+		ns = namespace
 	}
 
 	encPtr := new(encodeFn)
 	decPtr := new(decodeFn)
-	if err := ctx.registerNamed(r.Name, r.Namespace, &namedEntry{
+	if err := ctx.registerNamed(r.Name, ns, &namedEntry{
 		kind: namedRecord, schema: r, enc: encPtr, dec: decPtr,
 	}); err != nil {
 		return nil, err
@@ -253,7 +265,7 @@ func compileRecord(r avro.Record, ctx *compileCtx) (*planNode, error) {
 			return nil, InvalidFieldError{Record: r.Name, Index: i, Field: f.Name, Reason: "nil type"}
 		}
 		fieldNames[i] = f.Name
-		node, err := compileSchema(f.Type, ctx)
+		node, err := compileSchema(f.Type, ctx, ns)
 		if err != nil {
 			return nil, FieldCompileError{Record: r.Name, Field: f.Name, Err: err}
 		}
@@ -293,7 +305,7 @@ func compileRecord(r avro.Record, ctx *compileCtx) (*planNode, error) {
 	return &planNode{enc: *encPtr, dec: *decPtr}, nil
 }
 
-func compileEnum(e avro.Enum, ctx *compileCtx) (*planNode, error) {
+func compileEnum(e avro.Enum, ctx *compileCtx, namespace string) (*planNode, error) {
 	if e.Name == "" {
 		return nil, MissingNameError{Kind: "enum"}
 	}
@@ -312,11 +324,15 @@ func compileEnum(e avro.Enum, ctx *compileCtx) (*planNode, error) {
 			return nil, InvalidEnumDefaultError{Enum: e.Name, Default: e.Default}
 		}
 	}
+	ns := e.Namespace
+	if ns == "" {
+		ns = namespace
+	}
 
 	encPtr := new(encodeFn)
 	decPtr := new(decodeFn)
 	symbols := append([]string(nil), e.Symbols...)
-	if err := ctx.registerNamed(e.Name, e.Namespace, &namedEntry{
+	if err := ctx.registerNamed(e.Name, ns, &namedEntry{
 		kind: namedEnum, schema: e, enc: encPtr, dec: decPtr,
 		symbolIndex: idx, symbols: symbols,
 	}); err != nil {
@@ -348,11 +364,11 @@ func compileEnum(e avro.Enum, ctx *compileCtx) (*planNode, error) {
 	return &planNode{enc: *encPtr, dec: *decPtr}, nil
 }
 
-func compileArray(a avro.Array, ctx *compileCtx) (*planNode, error) {
+func compileArray(a avro.Array, ctx *compileCtx, namespace string) (*planNode, error) {
 	if a.Items == nil {
 		return nil, ErrNilArrayItems
 	}
-	item, err := compileSchema(a.Items, ctx)
+	item, err := compileSchema(a.Items, ctx, namespace)
 	if err != nil {
 		return nil, ItemsCompileError{Err: err}
 	}
@@ -403,11 +419,11 @@ func compileArray(a avro.Array, ctx *compileCtx) (*planNode, error) {
 	}, nil
 }
 
-func compileMap(m avro.Map, ctx *compileCtx) (*planNode, error) {
+func compileMap(m avro.Map, ctx *compileCtx, namespace string) (*planNode, error) {
 	if m.Values == nil {
 		return nil, ErrNilMapValues
 	}
-	val, err := compileSchema(m.Values, ctx)
+	val, err := compileSchema(m.Values, ctx, namespace)
 	if err != nil {
 		return nil, ValuesCompileError{Err: err}
 	}
@@ -464,7 +480,7 @@ func compileMap(m avro.Map, ctx *compileCtx) (*planNode, error) {
 	}, nil
 }
 
-func compileUnion(u avro.Union, ctx *compileCtx) (*planNode, error) {
+func compileUnion(u avro.Union, ctx *compileCtx, namespace string) (*planNode, error) {
 	if len(u.Types) == 0 {
 		return nil, ErrEmptyUnion
 	}
@@ -478,7 +494,7 @@ func compileUnion(u avro.Union, ctx *compileCtx) (*planNode, error) {
 		if _, nested := t.(avro.Union); nested {
 			return nil, NestedUnionError{Index: i}
 		}
-		key, named := unionBranchKey(t)
+		key, named := unionBranchKey(t, namespace)
 		if named {
 			if _, dup := seenNamed[key]; dup {
 				return nil, DuplicateBranchError{Key: key, Named: true}
@@ -490,7 +506,7 @@ func compileUnion(u avro.Union, ctx *compileCtx) (*planNode, error) {
 			}
 			seenUnnamed[key] = struct{}{}
 		}
-		node, err := compileSchema(t, ctx)
+		node, err := compileSchema(t, ctx, namespace)
 		if err != nil {
 			return nil, BranchCompileError{Index: i, Err: err}
 		}
@@ -527,7 +543,13 @@ func compileUnion(u avro.Union, ctx *compileCtx) (*planNode, error) {
 	}, nil
 }
 
-func unionBranchKey(s avro.Schema) (string, bool) {
+func unionBranchKey(s avro.Schema, namespace string) (string, bool) {
+	resolveNS := func(declared string) string {
+		if declared != "" {
+			return declared
+		}
+		return namespace
+	}
 	switch t := s.(type) {
 	case avro.Null:
 		return "null", false
@@ -550,28 +572,32 @@ func unionBranchKey(s avro.Schema) (string, bool) {
 	case avro.Map:
 		return "map", false
 	case avro.Record:
-		return fullName(t.Name, t.Namespace), true
+		return fullName(t.Name, resolveNS(t.Namespace)), true
 	case avro.Enum:
-		return fullName(t.Name, t.Namespace), true
+		return fullName(t.Name, resolveNS(t.Namespace)), true
 	case avro.Fixed:
-		return fullName(t.Name, t.Namespace), true
+		return fullName(t.Name, resolveNS(t.Namespace)), true
 	case avro.Ref:
-		return fullName(t.Name, t.Namespace), true
+		return fullName(t.Name, resolveNS(t.Namespace)), true
 	default:
 		return fmt.Sprintf("%T", s), false
 	}
 }
 
-func compileFixed(f avro.Fixed, ctx *compileCtx) (*planNode, error) {
+func compileFixed(f avro.Fixed, ctx *compileCtx, namespace string) (*planNode, error) {
 	if f.Name == "" {
 		return nil, MissingNameError{Kind: "fixed"}
 	}
 	if f.Size <= 0 {
 		return nil, InvalidFixedSizeError{Name: f.Name, Size: f.Size}
 	}
+	ns := f.Namespace
+	if ns == "" {
+		ns = namespace
+	}
 	encPtr := new(encodeFn)
 	decPtr := new(decodeFn)
-	if err := ctx.registerNamed(f.Name, f.Namespace, &namedEntry{
+	if err := ctx.registerNamed(f.Name, ns, &namedEntry{
 		kind: namedFixed, schema: f, enc: encPtr, dec: decPtr, size: f.Size,
 	}); err != nil {
 		return nil, err
@@ -600,7 +626,7 @@ func compileFixed(f avro.Fixed, ctx *compileCtx) (*planNode, error) {
 
 // ---- logical type plans ----
 
-func compileDecimal(d avro.Decimal, _ *compileCtx) (*planNode, error) {
+func compileDecimal(d avro.Decimal, ctx *compileCtx, namespace string) (*planNode, error) {
 	if d.Precision <= 0 {
 		return nil, InvalidPrecisionError{Precision: d.Precision}
 	}
@@ -610,6 +636,7 @@ func compileDecimal(d avro.Decimal, _ *compileCtx) (*planNode, error) {
 	switch under := d.Underlying.(type) {
 	case avro.Bytes:
 		precision := d.Precision
+		limit := precisionLimit(precision)
 		return &planNode{
 			enc: func(w *avro.BinaryWriter, v Value) error {
 				dec, ok := v.(Decimal)
@@ -619,7 +646,7 @@ func compileDecimal(d avro.Decimal, _ *compileCtx) (*planNode, error) {
 				if dec.Unscaled == nil {
 					return ErrNilDecimalUnscaled
 				}
-				if !decimalFits(dec.Unscaled, precision) {
+				if !decimalFits(dec.Unscaled, limit) {
 					return PrecisionOverflowError{Precision: precision}
 				}
 				return w.WriteBytes(twosComplementBytes(dec.Unscaled))
@@ -633,37 +660,55 @@ func compileDecimal(d avro.Decimal, _ *compileCtx) (*planNode, error) {
 			},
 		}, nil
 	case avro.Fixed:
+		if under.Name == "" {
+			return nil, MissingNameError{Kind: "fixed"}
+		}
 		if under.Size <= 0 {
 			return nil, InvalidFixedSizeError{Name: under.Name, Size: under.Size}
 		}
 		size := under.Size
 		precision := d.Precision
-		return &planNode{
-			enc: func(w *avro.BinaryWriter, v Value) error {
-				dec, ok := v.(Decimal)
-				if !ok {
-					return TypeMismatchError{Expected: "decimal", Got: v}
-				}
-				if dec.Unscaled == nil {
-					return ErrNilDecimalUnscaled
-				}
-				if !decimalFits(dec.Unscaled, precision) {
-					return PrecisionOverflowError{Precision: precision}
-				}
-				b := twosComplementBytes(dec.Unscaled)
-				if len(b) > size {
-					return DecimalSizeError{Encoded: len(b), FixedSize: size}
-				}
-				return w.WriteFixed(padTwosComplement(b, size, dec.Unscaled.Sign()))
-			},
-			dec: func(r *avro.BinaryReader) (Value, error) {
-				b, err := r.ReadFixed(size)
-				if err != nil {
-					return nil, err
-				}
-				return Decimal{Unscaled: bytesToBigInt(b)}, nil
-			},
-		}, nil
+		limit := precisionLimit(precision)
+		ns := under.Namespace
+		if ns == "" {
+			ns = namespace
+		}
+
+		// The underlying fixed is a named type per the Avro spec. Register it
+		// so a Ref to its name resolves to the same decimal-over-fixed plan
+		// rather than a raw fixed-bytes plan.
+		encPtr := new(encodeFn)
+		decPtr := new(decodeFn)
+		if err := ctx.registerNamed(under.Name, ns, &namedEntry{
+			kind: namedFixed, schema: d, enc: encPtr, dec: decPtr, size: size,
+		}); err != nil {
+			return nil, err
+		}
+		*encPtr = func(w *avro.BinaryWriter, v Value) error {
+			dec, ok := v.(Decimal)
+			if !ok {
+				return TypeMismatchError{Expected: "decimal", Got: v}
+			}
+			if dec.Unscaled == nil {
+				return ErrNilDecimalUnscaled
+			}
+			if !decimalFits(dec.Unscaled, limit) {
+				return PrecisionOverflowError{Precision: precision}
+			}
+			b := twosComplementBytes(dec.Unscaled)
+			if len(b) > size {
+				return DecimalSizeError{Encoded: len(b), FixedSize: size}
+			}
+			return w.WriteFixed(padTwosComplement(b, size, dec.Unscaled.Sign()))
+		}
+		*decPtr = func(r *avro.BinaryReader) (Value, error) {
+			b, err := r.ReadFixed(size)
+			if err != nil {
+				return nil, err
+			}
+			return Decimal{Unscaled: bytesToBigInt(b)}, nil
+		}
+		return &planNode{enc: *encPtr, dec: *decPtr}, nil
 	default:
 		return nil, InvalidDecimalUnderlyingError{Underlying: d.Underlying}
 	}
@@ -854,8 +899,13 @@ func padTwosComplement(b []byte, size, sign int) []byte {
 	return out
 }
 
-func decimalFits(x *big.Int, precision int) bool {
-	limit := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(precision)), nil)
-	abs := new(big.Int).Abs(x)
-	return abs.Cmp(limit) < 0
+// precisionLimit returns 10^precision as a *big.Int. It is computed once per
+// compiled decimal plan so encoding does not re-allocate on every call.
+func precisionLimit(precision int) *big.Int {
+	return new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(precision)), nil)
+}
+
+// decimalFits reports whether x's magnitude is strictly less than limit.
+func decimalFits(x, limit *big.Int) bool {
+	return new(big.Int).Abs(x).Cmp(limit) < 0
 }

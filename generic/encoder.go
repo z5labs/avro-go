@@ -26,7 +26,7 @@ func NewEncoder(s avro.Schema) (*Encoder, error) {
 	if s == nil {
 		return nil, ErrNilSchema
 	}
-	node, err := compileSchema(s, newCompileCtx())
+	node, err := compileSchema(s, newCompileCtx(), "")
 	if err != nil {
 		return nil, err
 	}

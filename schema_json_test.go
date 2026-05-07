@@ -259,12 +259,13 @@ func TestParseJSON_Errors(t *testing.T) {
 		require.Equal(t, "fields", got.Field)
 	})
 
-	t.Run("unknown logical type", func(t *testing.T) {
+	t.Run("unknown logical type falls back to underlying", func(t *testing.T) {
 		t.Parallel()
-		_, err := ParseJSON([]byte(`{"type":"int","logicalType":"bogus"}`))
-		var got UnknownLogicalTypeError
-		require.ErrorAs(t, err, &got)
-		require.Equal(t, "bogus", got.LogicalType)
+		// Per Avro spec, an unrecognized logicalType is ignored and the
+		// underlying Avro type is used.
+		got, err := ParseJSON([]byte(`{"type":"int","logicalType":"bogus"}`))
+		require.NoError(t, err)
+		require.Equal(t, Int{}, got)
 	})
 
 	t.Run("missing fixed size", func(t *testing.T) {
@@ -291,6 +292,54 @@ func TestParseJSON_Errors(t *testing.T) {
 		require.ErrorAs(t, err, &got)
 		require.Equal(t, "sideways", got.Value)
 	})
+}
+
+// TestParseJSON_LogicalTypeFallback covers the Avro spec rule that a logical
+// type whose underlying does not match the spec's required base must be
+// ignored, leaving the underlying schema as the result.
+func TestParseJSON_LogicalTypeFallback(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name string
+		json string
+		want Schema
+	}{
+		{
+			name: "uuid on int falls back to int",
+			json: `{"type":"int","logicalType":"uuid"}`,
+			want: Int{},
+		},
+		{
+			name: "date on long falls back to long",
+			json: `{"type":"long","logicalType":"date"}`,
+			want: Long{},
+		},
+		{
+			name: "timestamp-millis on int falls back to int",
+			json: `{"type":"int","logicalType":"timestamp-millis"}`,
+			want: Int{},
+		},
+		{
+			name: "decimal on string falls back to string",
+			json: `{"type":"string","logicalType":"decimal","precision":4}`,
+			want: String{},
+		},
+		{
+			name: "duration on fixed wrong size falls back to fixed",
+			json: `{"type":"fixed","name":"D","size":8,"logicalType":"duration"}`,
+			want: Fixed{Name: "D", Size: 8},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := ParseJSON([]byte(tc.json))
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+		})
+	}
 }
 
 // TestParseJSON_NamespaceInheritance verifies that nested named types without
