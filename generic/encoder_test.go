@@ -21,19 +21,8 @@ func encodeBytesFor(t *testing.T, s avro.Schema, v Value) []byte {
 	enc, err := NewEncoder(s)
 	require.NoError(t, err)
 	var buf bytes.Buffer
-	require.NoError(t, avro.MarshalBinary(&buf, marshalAdapter{enc: enc, v: v}))
+	require.NoError(t, enc.Encode(&buf, v))
 	return buf.Bytes()
-}
-
-// marshalAdapter lets us reuse avro.MarshalBinary, which always supplies a
-// fresh *BinaryWriter.
-type marshalAdapter struct {
-	enc *Encoder
-	v   Value
-}
-
-func (m marshalAdapter) MarshalAvroBinary(w *avro.BinaryWriter) error {
-	return m.enc.Encode(w, m.v)
 }
 
 func TestEncoder_Primitives(t *testing.T) {
@@ -303,7 +292,7 @@ func TestEncode_RuntimeErrors(t *testing.T) {
 		t.Parallel()
 		enc, err := NewEncoder(avro.Int{})
 		require.NoError(t, err)
-		err = enc.Encode(&avro.BinaryWriter{}, String("nope"))
+		err = enc.Encode(&bytes.Buffer{}, String("nope"))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "type mismatch")
 	})
@@ -319,10 +308,10 @@ func TestEncode_RuntimeErrors(t *testing.T) {
 		})
 		require.NoError(t, err)
 		var buf bytes.Buffer
-		err = avro.MarshalBinary(&buf, marshalAdapter{enc: enc, v: Record{Fields: []Field{
+		err = enc.Encode(&buf, Record{Fields: []Field{
 			{Name: "a", Value: Int(1)},
 			{Name: "wrong", Value: Int(2)},
-		}}})
+		}})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "expected name")
 	})
@@ -337,7 +326,7 @@ func TestEncode_RuntimeErrors(t *testing.T) {
 			},
 		})
 		require.NoError(t, err)
-		err = enc.Encode(&avro.BinaryWriter{}, Record{Fields: []Field{{Name: "a", Value: Int(1)}}})
+		err = enc.Encode(&bytes.Buffer{}, Record{Fields: []Field{{Name: "a", Value: Int(1)}}})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "expected 2 fields")
 	})
@@ -346,7 +335,7 @@ func TestEncode_RuntimeErrors(t *testing.T) {
 		t.Parallel()
 		enc, err := NewEncoder(avro.Union{Types: []avro.Schema{avro.Null{}, avro.Int{}}})
 		require.NoError(t, err)
-		err = enc.Encode(&avro.BinaryWriter{}, Union{Index: 5, Value: Int(0)})
+		err = enc.Encode(&bytes.Buffer{}, Union{Index: 5, Value: Int(0)})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "out of range")
 	})
@@ -356,7 +345,7 @@ func TestEncode_RuntimeErrors(t *testing.T) {
 		enc, err := NewEncoder(avro.Union{Types: []avro.Schema{avro.Null{}, avro.Int{}}})
 		require.NoError(t, err)
 		var buf bytes.Buffer
-		err = avro.MarshalBinary(&buf, marshalAdapter{enc: enc, v: Union{Index: 1, Value: String("x")}})
+		err = enc.Encode(&buf, Union{Index: 1, Value: String("x")})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "type mismatch")
 	})
@@ -367,7 +356,7 @@ func TestEncode_RuntimeErrors(t *testing.T) {
 		// the schema's encoder expects a generic.Int.
 		enc, err := NewEncoder(avro.Int{})
 		require.NoError(t, err)
-		err = enc.Encode(&avro.BinaryWriter{}, Date(0))
+		err = enc.Encode(&bytes.Buffer{}, Date(0))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "type mismatch")
 	})
@@ -376,7 +365,7 @@ func TestEncode_RuntimeErrors(t *testing.T) {
 		t.Parallel()
 		enc, err := NewEncoder(avro.Enum{Name: "E", Symbols: []string{"A", "B"}})
 		require.NoError(t, err)
-		err = enc.Encode(&avro.BinaryWriter{}, Enum{Symbol: "X"})
+		err = enc.Encode(&bytes.Buffer{}, Enum{Symbol: "X"})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "not in schema")
 	})
@@ -385,7 +374,7 @@ func TestEncode_RuntimeErrors(t *testing.T) {
 		t.Parallel()
 		enc, err := NewEncoder(avro.Fixed{Name: "F", Size: 4})
 		require.NoError(t, err)
-		err = enc.Encode(&avro.BinaryWriter{}, Fixed{0x01, 0x02})
+		err = enc.Encode(&bytes.Buffer{}, Fixed{0x01, 0x02})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "expected 4 bytes")
 	})
@@ -395,7 +384,7 @@ func TestEncode_RuntimeErrors(t *testing.T) {
 		enc, err := NewEncoder(avro.Decimal{Precision: 4, Scale: 0, Underlying: avro.Bytes{}})
 		require.NoError(t, err)
 		// 10^4 exceeds 4 digits of precision.
-		err = enc.Encode(&avro.BinaryWriter{}, Decimal{Unscaled: big.NewInt(10000)})
+		err = enc.Encode(&bytes.Buffer{}, Decimal{Unscaled: big.NewInt(10000)})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "precision")
 	})

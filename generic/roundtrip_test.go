@@ -20,12 +20,12 @@ func roundTrip(t *testing.T, s avro.Schema, v Value) Value {
 	enc, err := NewEncoder(s)
 	require.NoError(t, err)
 	var buf bytes.Buffer
-	require.NoError(t, avro.MarshalBinary(&buf, marshalAdapter{enc: enc, v: v}))
+	require.NoError(t, enc.Encode(&buf, v))
 
 	dec, err := NewDecoder(s)
 	require.NoError(t, err)
-	var out Value
-	require.NoError(t, avro.UnmarshalBinary(&buf, unmarshalAdapter{dec: dec, out: &out}))
+	out, err := dec.Decode(&buf)
+	require.NoError(t, err)
 	return out
 }
 

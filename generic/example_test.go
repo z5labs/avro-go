@@ -13,32 +13,6 @@ import (
 	"github.com/z5labs/avro-go"
 )
 
-// exampleWriter adapts an *Encoder/Value pair to avro.BinaryMarshaler so it
-// can be passed to avro.MarshalBinary.
-type exampleWriter struct {
-	enc *Encoder
-	v   Value
-}
-
-func (s exampleWriter) MarshalAvroBinary(w *avro.BinaryWriter) error {
-	return s.enc.Encode(w, s.v)
-}
-
-// exampleReader adapts a *Decoder to avro.BinaryUnmarshaler.
-type exampleReader struct {
-	dec *Decoder
-	out *Value
-}
-
-func (s exampleReader) UnmarshalAvroBinary(r *avro.BinaryReader) error {
-	v, err := s.dec.Decode(r)
-	if err != nil {
-		return err
-	}
-	*s.out = v
-	return nil
-}
-
 // ExampleEncoder shows the canonical "encode a record" flow against a schema.
 func ExampleEncoder() {
 	schema := avro.Record{
@@ -61,7 +35,7 @@ func ExampleEncoder() {
 	}}
 
 	var buf bytes.Buffer
-	if err := avro.MarshalBinary(&buf, exampleWriter{enc: enc, v: user}); err != nil {
+	if err := enc.Encode(&buf, user); err != nil {
 		fmt.Println(err)
 		return
 	}
@@ -83,8 +57,8 @@ func ExampleDecoder() {
 	// Wire bytes for union index 1 + string "hi".
 	data := []byte{0x02, 0x04, 'h', 'i'}
 
-	var v Value
-	if err := avro.UnmarshalBinary(bytes.NewReader(data), exampleReader{dec: dec, out: &v}); err != nil {
+	v, err := dec.Decode(bytes.NewReader(data))
+	if err != nil {
 		fmt.Println(err)
 		return
 	}
@@ -118,7 +92,7 @@ func ExampleEncoder_reuse() {
 
 	var buf bytes.Buffer
 	for _, p := range points {
-		if err := avro.MarshalBinary(&buf, exampleWriter{enc: enc, v: p}); err != nil {
+		if err := enc.Encode(&buf, p); err != nil {
 			fmt.Println(err)
 			return
 		}

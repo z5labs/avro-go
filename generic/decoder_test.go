@@ -13,23 +13,6 @@ import (
 	"github.com/z5labs/avro-go"
 )
 
-// unmarshalAdapter routes the *avro.BinaryReader constructed by
-// avro.UnmarshalBinary into a Decoder, returning the decoded Value via the
-// captured pointers.
-type unmarshalAdapter struct {
-	dec *Decoder
-	out *Value
-}
-
-func (u unmarshalAdapter) UnmarshalAvroBinary(r *avro.BinaryReader) error {
-	v, err := u.dec.Decode(r)
-	if err != nil {
-		return err
-	}
-	*u.out = v
-	return nil
-}
-
 // decodeOne is a small helper that validates s, then decodes data into a
 // Value.
 func decodeOne(t *testing.T, s avro.Schema, data []byte) (Value, error) {
@@ -38,9 +21,7 @@ func decodeOne(t *testing.T, s avro.Schema, data []byte) (Value, error) {
 	if err != nil {
 		return nil, err
 	}
-	var out Value
-	err = avro.UnmarshalBinary(bytes.NewReader(data), unmarshalAdapter{dec: dec, out: &out})
-	return out, err
+	return dec.Decode(bytes.NewReader(data))
 }
 
 func TestDecoder_Primitives(t *testing.T) {

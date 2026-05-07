@@ -7,6 +7,7 @@ package generic
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/z5labs/avro-go"
 )
@@ -34,6 +35,6 @@ func NewDecoder(s avro.Schema) (*Decoder, error) {
 }
 
 // Decode reads the next Value from r using the compiled schema.
-func (d *Decoder) Decode(r *avro.BinaryReader) (Value, error) {
-	return d.dec(r)
+func (d *Decoder) Decode(r io.Reader) (Value, error) {
+	return d.dec(avro.NewBinaryReader(r))
 }

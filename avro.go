@@ -29,6 +29,11 @@ type BinaryWriter struct {
 	offset int64
 }
 
+// NewBinaryWriter returns a BinaryWriter that writes to w.
+func NewBinaryWriter(w io.Writer) *BinaryWriter {
+	return &BinaryWriter{out: w}
+}
+
 // Offset returns the number of bytes successfully written so far.
 func (w *BinaryWriter) Offset() int64 {
 	return w.offset
@@ -182,6 +187,11 @@ func UnmarshalBinary(r io.Reader, v BinaryUnmarshaler) error {
 type BinaryReader struct {
 	in     io.Reader
 	offset int64
+}
+
+// NewBinaryReader returns a BinaryReader that reads from r.
+func NewBinaryReader(r io.Reader) *BinaryReader {
+	return &BinaryReader{in: r}
 }
 
 // Offset returns the number of bytes successfully consumed so far.

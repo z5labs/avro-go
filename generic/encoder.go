@@ -7,6 +7,7 @@ package generic
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/z5labs/avro-go"
 )
@@ -34,6 +35,6 @@ func NewEncoder(s avro.Schema) (*Encoder, error) {
 }
 
 // Encode writes v to w using the compiled schema.
-func (e *Encoder) Encode(w *avro.BinaryWriter, v Value) error {
-	return e.enc(w, v)
+func (e *Encoder) Encode(w io.Writer, v Value) error {
+	return e.enc(avro.NewBinaryWriter(w), v)
 }
