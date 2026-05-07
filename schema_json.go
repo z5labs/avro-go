@@ -116,14 +116,24 @@ func (f Field) MarshalJSON() ([]byte, error) {
 	default:
 		return nil, InvalidOrderError{Order: f.Order}
 	}
+	// json.RawMessage with omitempty lets us distinguish "no default" (nil
+	// slice, omitted) from an explicit null default (the bytes "null", emitted).
+	var def json.RawMessage
+	if f.HasDefault {
+		b, err := json.Marshal(f.Default)
+		if err != nil {
+			return nil, err
+		}
+		def = b
+	}
 	return json.Marshal(struct {
-		Name    string   `json:"name"`
-		Doc     string   `json:"doc,omitempty"`
-		Aliases []string `json:"aliases,omitempty"`
-		Type    Schema   `json:"type"`
-		Default any      `json:"default,omitempty"`
-		Order   string   `json:"order,omitempty"`
-	}{f.Name, f.Doc, f.Aliases, f.Type, f.Default, order})
+		Name    string          `json:"name"`
+		Doc     string          `json:"doc,omitempty"`
+		Aliases []string        `json:"aliases,omitempty"`
+		Type    Schema          `json:"type"`
+		Default json.RawMessage `json:"default,omitempty"`
+		Order   string          `json:"order,omitempty"`
+	}{f.Name, f.Doc, f.Aliases, f.Type, def, order})
 }
 
 func (e Enum) MarshalJSON() ([]byte, error) {
@@ -417,6 +427,7 @@ func parseField(data []byte, namespace string) (*Field, error) {
 	}
 	f.Type = t
 	if rawDefault, ok := fobj["default"]; ok {
+		f.HasDefault = true
 		var v any
 		if err := json.Unmarshal(rawDefault, &v); err != nil {
 			return nil, err
@@ -613,15 +624,30 @@ func parseLogical(under, lt string, obj map[string]json.RawMessage, namespace st
 }
 
 // parseLogicalUnderlying resolves the "type" field of a logical-type schema
-// into its base Schema. Avro logical types are layered only on primitives or
-// fixed; any other value of under is rejected.
+// into its base Schema. Per the Avro spec's fallback rule, the underlying
+// schema must be parseable for any valid Avro type so that an invalid or
+// unknown logical type can be ignored cleanly.
 func parseLogicalUnderlying(under string, obj map[string]json.RawMessage, namespace string) (Schema, error) {
 	switch under {
 	case "null", "boolean", "int", "long", "float", "double", "bytes", "string":
 		return parseTypeName(under, namespace), nil
+	case "record":
+		return parseRecord(obj, namespace)
+	case "enum":
+		return parseEnum(obj, namespace)
+	case "array":
+		return parseArray(obj, namespace)
+	case "map":
+		return parseMap(obj, namespace)
 	case "fixed":
 		return parseFixed(obj, namespace)
 	default:
+		// Treat unrecognized type names as named-type references (matches
+		// parseObjectJSON's fallback for non-keyword types).
+		ref := parseTypeName(under, namespace)
+		if _, isRef := ref.(Ref); isRef {
+			return ref, nil
+		}
 		return nil, UnknownTypeError{Type: under}
 	}
 }

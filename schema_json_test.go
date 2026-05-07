@@ -376,11 +376,15 @@ func TestField_DefaultAndOrderRoundTrip(t *testing.T) {
 	}{
 		{
 			name:  "default string",
-			field: &Field{Name: "x", Type: String{}, Default: "hello"},
+			field: &Field{Name: "x", Type: String{}, Default: "hello", HasDefault: true},
 		},
 		{
-			name:  "default null",
-			field: &Field{Name: "x", Type: Union{Types: []Schema{Null{}, String{}}}, Default: nil},
+			name:  "no default specified",
+			field: &Field{Name: "x", Type: Union{Types: []Schema{Null{}, String{}}}},
+		},
+		{
+			name:  "explicit null default for union",
+			field: &Field{Name: "x", Type: Union{Types: []Schema{Null{}, String{}}}, Default: nil, HasDefault: true},
 		},
 		{
 			name:  "order descending",
@@ -388,7 +392,7 @@ func TestField_DefaultAndOrderRoundTrip(t *testing.T) {
 		},
 		{
 			name:  "order ignore with default",
-			field: &Field{Name: "x", Type: Boolean{}, Default: true, Order: OrderIgnore},
+			field: &Field{Name: "x", Type: Boolean{}, Default: true, HasDefault: true, Order: OrderIgnore},
 		},
 	}
 
@@ -404,7 +408,51 @@ func TestField_DefaultAndOrderRoundTrip(t *testing.T) {
 			rec := got.(Record)
 			require.Equal(t, tc.field.Name, rec.Fields[0].Name)
 			require.Equal(t, tc.field.Order, rec.Fields[0].Order)
+			require.Equal(t, tc.field.HasDefault, rec.Fields[0].HasDefault)
 			require.Equal(t, tc.field.Default, rec.Fields[0].Default)
 		})
 	}
+}
+
+// TestField_ExplicitNullDefaultEmitted verifies the JSON wire form for an
+// explicit null default — the "default" key must be present with a null value,
+// which is the only way to give a union-with-null branch a default in Avro.
+func TestField_ExplicitNullDefaultEmitted(t *testing.T) {
+	t.Parallel()
+
+	f := &Field{
+		Name:       "x",
+		Type:       Union{Types: []Schema{Null{}, String{}}},
+		Default:    nil,
+		HasDefault: true,
+	}
+	schema := Record{Name: "R", Fields: []*Field{f}}
+	data, err := json.Marshal(schema)
+	require.NoError(t, err)
+	require.JSONEq(t,
+		`{"type":"record","name":"R","fields":[{"name":"x","type":["null","string"],"default":null}]}`,
+		string(data),
+	)
+}
+
+// TestParseJSON_ComplexUnderlyingFallback covers the Avro spec rule that an
+// invalid logicalType is ignored, including when the underlying type is a
+// complex (non-primitive, non-fixed) Avro type.
+func TestParseJSON_ComplexUnderlyingFallback(t *testing.T) {
+	t.Parallel()
+
+	t.Run("record with bogus logicalType falls back to record", func(t *testing.T) {
+		t.Parallel()
+		got, err := ParseJSON([]byte(`{"type":"record","name":"R","logicalType":"bogus","fields":[{"name":"a","type":"int"}]}`))
+		require.NoError(t, err)
+		want := Record{Name: "R", Fields: []*Field{{Name: "a", Type: Int{}}}}
+		require.Equal(t, want, got)
+	})
+
+	t.Run("array with bogus logicalType falls back to array", func(t *testing.T) {
+		t.Parallel()
+		got, err := ParseJSON([]byte(`{"type":"array","items":"long","logicalType":"bogus"}`))
+		require.NoError(t, err)
+		require.Equal(t, Array{Items: Long{}}, got)
+	})
 }

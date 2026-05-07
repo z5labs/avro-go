@@ -79,10 +79,13 @@ type Field struct {
 	Aliases []string
 	Doc     string
 	Type    Schema
-	// Default is the field's default value as defined by the Avro spec. A nil
-	// value means no default was specified.
-	Default any
-	Order   Order
+	// Default is the field's default value as defined by the Avro spec.
+	// HasDefault distinguishes "no default specified" (HasDefault=false) from
+	// an explicit null default (HasDefault=true, Default=nil), which is needed
+	// for unions whose first branch is null.
+	Default    any
+	HasDefault bool
+	Order      Order
 }
 
 // Record is a named record schema.
