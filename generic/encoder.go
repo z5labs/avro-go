@@ -6,7 +6,6 @@
 package generic
 
 import (
-	"fmt"
 	"io"
 
 	"github.com/z5labs/avro-go"
@@ -25,7 +24,7 @@ type Encoder struct {
 // logical-type pairing, etc.) are reported here.
 func NewEncoder(s avro.Schema) (*Encoder, error) {
 	if s == nil {
-		return nil, fmt.Errorf("avro/generic: nil schema")
+		return nil, ErrNilSchema
 	}
 	node, err := compileSchema(s, newCompileCtx())
 	if err != nil {

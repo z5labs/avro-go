@@ -6,7 +6,6 @@
 package generic
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/z5labs/avro-go"
@@ -70,7 +69,7 @@ func (c *compileCtx) resolveNamed(name, namespace string) (*namedEntry, error) {
 	full := fullName(name, namespace)
 	entry, ok := c.named[full]
 	if !ok {
-		return nil, fmt.Errorf("avro/generic: unresolved reference %q", full)
+		return nil, UnresolvedReferenceError{Name: full}
 	}
 	return entry, nil
 }
@@ -80,10 +79,10 @@ func (c *compileCtx) resolveNamed(name, namespace string) (*namedEntry, error) {
 func (c *compileCtx) registerNamed(name, namespace string, entry *namedEntry) error {
 	full := fullName(name, namespace)
 	if full == "" {
-		return fmt.Errorf("avro/generic: named type missing name")
+		return MissingNameError{Kind: "named type"}
 	}
 	if _, exists := c.named[full]; exists {
-		return fmt.Errorf("avro/generic: duplicate named type %q", full)
+		return DuplicateNameError{Name: full}
 	}
 	c.named[full] = entry
 	return nil

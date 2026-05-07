@@ -202,18 +202,22 @@ func TestNewEncoder_Errors(t *testing.T) {
 	testCases := []struct {
 		name   string
 		schema avro.Schema
-		// substring expected in the error message
-		errSub string
+		// assert validates the returned error using errors.Is / errors.As.
+		assert func(t *testing.T, err error)
 	}{
 		{
 			name:   "nil schema",
 			schema: nil,
-			errSub: "nil schema",
+			assert: func(t *testing.T, err error) { require.ErrorIs(t, err, ErrNilSchema) },
 		},
 		{
 			name:   "unresolved ref",
 			schema: avro.Ref{Name: "Missing"},
-			errSub: "unresolved reference",
+			assert: func(t *testing.T, err error) {
+				var got UnresolvedReferenceError
+				require.ErrorAs(t, err, &got)
+				require.Equal(t, "Missing", got.Name)
+			},
 		},
 		{
 			name: "duplicate field names",
@@ -224,52 +228,93 @@ func TestNewEncoder_Errors(t *testing.T) {
 					{Name: "x", Type: avro.Int{}},
 				},
 			},
-			errSub: "duplicate field name",
+			assert: func(t *testing.T, err error) {
+				var got DuplicateFieldError
+				require.ErrorAs(t, err, &got)
+				require.Equal(t, "R", got.Record)
+				require.Equal(t, "x", got.Field)
+			},
 		},
 		{
 			name:   "enum with no symbols",
 			schema: avro.Enum{Name: "E"},
-			errSub: "no symbols",
+			assert: func(t *testing.T, err error) {
+				var got EmptySymbolsError
+				require.ErrorAs(t, err, &got)
+				require.Equal(t, "E", got.Enum)
+			},
 		},
 		{
 			name:   "enum default not in symbols",
 			schema: avro.Enum{Name: "E", Symbols: []string{"A"}, Default: "B"},
-			errSub: "default",
+			assert: func(t *testing.T, err error) {
+				var got InvalidEnumDefaultError
+				require.ErrorAs(t, err, &got)
+				require.Equal(t, "B", got.Default)
+			},
 		},
 		{
 			name:   "enum duplicate symbols",
 			schema: avro.Enum{Name: "E", Symbols: []string{"A", "A"}},
-			errSub: "duplicate symbol",
+			assert: func(t *testing.T, err error) {
+				var got DuplicateSymbolError
+				require.ErrorAs(t, err, &got)
+				require.Equal(t, "A", got.Symbol)
+			},
 		},
 		{
 			name:   "fixed zero size",
 			schema: avro.Fixed{Name: "F", Size: 0},
-			errSub: "size must be > 0",
+			assert: func(t *testing.T, err error) {
+				var got InvalidFixedSizeError
+				require.ErrorAs(t, err, &got)
+				require.Equal(t, "F", got.Name)
+				require.Equal(t, 0, got.Size)
+			},
 		},
 		{
 			name:   "union with nested union",
 			schema: avro.Union{Types: []avro.Schema{avro.Union{Types: []avro.Schema{avro.Int{}}}}},
-			errSub: "itself a union",
+			assert: func(t *testing.T, err error) {
+				var got NestedUnionError
+				require.ErrorAs(t, err, &got)
+				require.Equal(t, 0, got.Index)
+			},
 		},
 		{
 			name:   "union duplicate unnamed",
 			schema: avro.Union{Types: []avro.Schema{avro.Int{}, avro.Int{}}},
-			errSub: "duplicate",
+			assert: func(t *testing.T, err error) {
+				var got DuplicateBranchError
+				require.ErrorAs(t, err, &got)
+				require.False(t, got.Named)
+				require.Equal(t, "int", got.Key)
+			},
 		},
 		{
 			name:   "decimal invalid precision",
 			schema: avro.Decimal{Precision: 0, Scale: 0, Underlying: avro.Bytes{}},
-			errSub: "precision",
+			assert: func(t *testing.T, err error) {
+				var got InvalidPrecisionError
+				require.ErrorAs(t, err, &got)
+			},
 		},
 		{
 			name:   "decimal invalid scale",
 			schema: avro.Decimal{Precision: 4, Scale: 5, Underlying: avro.Bytes{}},
-			errSub: "scale",
+			assert: func(t *testing.T, err error) {
+				var got InvalidScaleError
+				require.ErrorAs(t, err, &got)
+				require.Equal(t, 5, got.Scale)
+			},
 		},
 		{
 			name:   "decimal wrong underlying",
 			schema: avro.Decimal{Precision: 4, Scale: 0, Underlying: avro.Int{}},
-			errSub: "underlying",
+			assert: func(t *testing.T, err error) {
+				var got InvalidDecimalUnderlyingError
+				require.ErrorAs(t, err, &got)
+			},
 		},
 	}
 
@@ -278,7 +323,7 @@ func TestNewEncoder_Errors(t *testing.T) {
 			t.Parallel()
 			_, err := NewEncoder(tc.schema)
 			require.Error(t, err)
-			require.Contains(t, err.Error(), tc.errSub)
+			tc.assert(t, err)
 		})
 	}
 }
@@ -293,8 +338,10 @@ func TestEncode_RuntimeErrors(t *testing.T) {
 		enc, err := NewEncoder(avro.Int{})
 		require.NoError(t, err)
 		err = enc.Encode(&bytes.Buffer{}, String("nope"))
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "type mismatch")
+		var got TypeMismatchError
+		require.ErrorAs(t, err, &got)
+		require.Equal(t, "int", got.Expected)
+		require.Equal(t, String("nope"), got.Got)
 	})
 
 	t.Run("record field name mismatch", func(t *testing.T) {
@@ -312,8 +359,12 @@ func TestEncode_RuntimeErrors(t *testing.T) {
 			{Name: "a", Value: Int(1)},
 			{Name: "wrong", Value: Int(2)},
 		}})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "expected name")
+		var got FieldNameError
+		require.ErrorAs(t, err, &got)
+		require.Equal(t, "R", got.Record)
+		require.Equal(t, 1, got.Index)
+		require.Equal(t, "b", got.Expected)
+		require.Equal(t, "wrong", got.Got)
 	})
 
 	t.Run("record wrong field count", func(t *testing.T) {
@@ -327,8 +378,10 @@ func TestEncode_RuntimeErrors(t *testing.T) {
 		})
 		require.NoError(t, err)
 		err = enc.Encode(&bytes.Buffer{}, Record{Fields: []Field{{Name: "a", Value: Int(1)}}})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "expected 2 fields")
+		var got FieldCountError
+		require.ErrorAs(t, err, &got)
+		require.Equal(t, 2, got.Expected)
+		require.Equal(t, 1, got.Got)
 	})
 
 	t.Run("union index out of range", func(t *testing.T) {
@@ -336,8 +389,11 @@ func TestEncode_RuntimeErrors(t *testing.T) {
 		enc, err := NewEncoder(avro.Union{Types: []avro.Schema{avro.Null{}, avro.Int{}}})
 		require.NoError(t, err)
 		err = enc.Encode(&bytes.Buffer{}, Union{Index: 5, Value: Int(0)})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "out of range")
+		var got IndexOutOfRangeError
+		require.ErrorAs(t, err, &got)
+		require.Equal(t, "union", got.Kind)
+		require.Equal(t, int64(5), got.Index)
+		require.Equal(t, 2, got.Len)
 	})
 
 	t.Run("union branch type mismatch", func(t *testing.T) {
@@ -346,8 +402,8 @@ func TestEncode_RuntimeErrors(t *testing.T) {
 		require.NoError(t, err)
 		var buf bytes.Buffer
 		err = enc.Encode(&buf, Union{Index: 1, Value: String("x")})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "type mismatch")
+		var got TypeMismatchError
+		require.ErrorAs(t, err, &got)
 	})
 
 	t.Run("logical/non-logical mismatch", func(t *testing.T) {
@@ -357,8 +413,8 @@ func TestEncode_RuntimeErrors(t *testing.T) {
 		enc, err := NewEncoder(avro.Int{})
 		require.NoError(t, err)
 		err = enc.Encode(&bytes.Buffer{}, Date(0))
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "type mismatch")
+		var got TypeMismatchError
+		require.ErrorAs(t, err, &got)
 	})
 
 	t.Run("enum unknown symbol", func(t *testing.T) {
@@ -366,8 +422,10 @@ func TestEncode_RuntimeErrors(t *testing.T) {
 		enc, err := NewEncoder(avro.Enum{Name: "E", Symbols: []string{"A", "B"}})
 		require.NoError(t, err)
 		err = enc.Encode(&bytes.Buffer{}, Enum{Symbol: "X"})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "not in schema")
+		var got UnknownSymbolError
+		require.ErrorAs(t, err, &got)
+		require.Equal(t, "E", got.Enum)
+		require.Equal(t, "X", got.Symbol)
 	})
 
 	t.Run("fixed size mismatch", func(t *testing.T) {
@@ -375,8 +433,10 @@ func TestEncode_RuntimeErrors(t *testing.T) {
 		enc, err := NewEncoder(avro.Fixed{Name: "F", Size: 4})
 		require.NoError(t, err)
 		err = enc.Encode(&bytes.Buffer{}, Fixed{0x01, 0x02})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "expected 4 bytes")
+		var got FixedSizeError
+		require.ErrorAs(t, err, &got)
+		require.Equal(t, 4, got.Expected)
+		require.Equal(t, 2, got.Got)
 	})
 
 	t.Run("decimal precision overflow", func(t *testing.T) {
@@ -385,7 +445,8 @@ func TestEncode_RuntimeErrors(t *testing.T) {
 		require.NoError(t, err)
 		// 10^4 exceeds 4 digits of precision.
 		err = enc.Encode(&bytes.Buffer{}, Decimal{Unscaled: big.NewInt(10000)})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "precision")
+		var got PrecisionOverflowError
+		require.ErrorAs(t, err, &got)
+		require.Equal(t, 4, got.Precision)
 	})
 }

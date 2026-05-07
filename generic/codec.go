@@ -79,7 +79,7 @@ func compileSchema(s avro.Schema, ctx *compileCtx) (*planNode, error) {
 	case avro.Duration:
 		return durationPlan, nil
 	default:
-		return nil, fmt.Errorf("avro/generic: unsupported schema type %T", s)
+		return nil, UnsupportedSchemaError{Schema: s}
 	}
 }
 
@@ -89,7 +89,7 @@ var (
 	nullPlan = &planNode{
 		enc: func(_ *avro.BinaryWriter, v Value) error {
 			if _, ok := v.(Null); !ok {
-				return typeMismatch("null", v)
+				return TypeMismatchError{Expected: "null", Got: v}
 			}
 			return nil
 		},
@@ -224,7 +224,7 @@ func compileRef(r avro.Ref, ctx *compileCtx) (*planNode, error) {
 
 func compileRecord(r avro.Record, ctx *compileCtx) (*planNode, error) {
 	if r.Name == "" {
-		return nil, fmt.Errorf("avro/generic: record missing name")
+		return nil, MissingNameError{Kind: "record"}
 	}
 
 	encPtr := new(encodeFn)
@@ -240,22 +240,22 @@ func compileRecord(r avro.Record, ctx *compileCtx) (*planNode, error) {
 	fieldNodes := make([]*planNode, len(r.Fields))
 	for i, f := range r.Fields {
 		if f == nil {
-			return nil, fmt.Errorf("avro/generic: record %q: nil field at index %d", r.Name, i)
+			return nil, InvalidFieldError{Record: r.Name, Index: i, Reason: "nil field"}
 		}
 		if f.Name == "" {
-			return nil, fmt.Errorf("avro/generic: record %q: field %d missing name", r.Name, i)
+			return nil, InvalidFieldError{Record: r.Name, Index: i, Reason: "missing name"}
 		}
 		if _, dup := seen[f.Name]; dup {
-			return nil, fmt.Errorf("avro/generic: record %q: duplicate field name %q", r.Name, f.Name)
+			return nil, DuplicateFieldError{Record: r.Name, Field: f.Name}
 		}
 		seen[f.Name] = struct{}{}
 		if f.Type == nil {
-			return nil, fmt.Errorf("avro/generic: record %q: field %q has nil type", r.Name, f.Name)
+			return nil, InvalidFieldError{Record: r.Name, Index: i, Field: f.Name, Reason: "nil type"}
 		}
 		fieldNames[i] = f.Name
 		node, err := compileSchema(f.Type, ctx)
 		if err != nil {
-			return nil, fmt.Errorf("record %q field %q: %w", r.Name, f.Name, err)
+			return nil, FieldCompileError{Record: r.Name, Field: f.Name, Err: err}
 		}
 		fieldNodes[i] = node
 	}
@@ -264,14 +264,14 @@ func compileRecord(r avro.Record, ctx *compileCtx) (*planNode, error) {
 	*encPtr = func(w *avro.BinaryWriter, v Value) error {
 		rec, ok := v.(Record)
 		if !ok {
-			return typeMismatch(fmt.Sprintf("record %q", name), v)
+			return TypeMismatchError{Expected: fmt.Sprintf("record %q", name), Got: v}
 		}
 		if len(rec.Fields) != len(fieldNames) {
-			return fmt.Errorf("avro/generic: record %q: expected %d fields, got %d", name, len(fieldNames), len(rec.Fields))
+			return FieldCountError{Record: name, Expected: len(fieldNames), Got: len(rec.Fields)}
 		}
 		for i, f := range rec.Fields {
 			if f.Name != fieldNames[i] {
-				return fmt.Errorf("avro/generic: record %q: field %d: expected name %q, got %q", name, i, fieldNames[i], f.Name)
+				return FieldNameError{Record: name, Index: i, Expected: fieldNames[i], Got: f.Name}
 			}
 			if err := fieldNodes[i].enc(w, f.Value); err != nil {
 				return err
@@ -295,21 +295,21 @@ func compileRecord(r avro.Record, ctx *compileCtx) (*planNode, error) {
 
 func compileEnum(e avro.Enum, ctx *compileCtx) (*planNode, error) {
 	if e.Name == "" {
-		return nil, fmt.Errorf("avro/generic: enum missing name")
+		return nil, MissingNameError{Kind: "enum"}
 	}
 	if len(e.Symbols) == 0 {
-		return nil, fmt.Errorf("avro/generic: enum %q has no symbols", e.Name)
+		return nil, EmptySymbolsError{Enum: e.Name}
 	}
 	idx := make(map[string]int, len(e.Symbols))
 	for i, s := range e.Symbols {
 		if _, dup := idx[s]; dup {
-			return nil, fmt.Errorf("avro/generic: enum %q: duplicate symbol %q", e.Name, s)
+			return nil, DuplicateSymbolError{Enum: e.Name, Symbol: s}
 		}
 		idx[s] = i
 	}
 	if e.Default != "" {
 		if _, ok := idx[e.Default]; !ok {
-			return nil, fmt.Errorf("avro/generic: enum %q: default %q not in symbols", e.Name, e.Default)
+			return nil, InvalidEnumDefaultError{Enum: e.Name, Default: e.Default}
 		}
 	}
 
@@ -327,11 +327,11 @@ func compileEnum(e avro.Enum, ctx *compileCtx) (*planNode, error) {
 	*encPtr = func(w *avro.BinaryWriter, v Value) error {
 		en, ok := v.(Enum)
 		if !ok {
-			return typeMismatch(fmt.Sprintf("enum %q", name), v)
+			return TypeMismatchError{Expected: fmt.Sprintf("enum %q", name), Got: v}
 		}
 		i, ok := idx[en.Symbol]
 		if !ok {
-			return fmt.Errorf("avro/generic: enum %q: symbol %q not in schema", name, en.Symbol)
+			return UnknownSymbolError{Enum: name, Symbol: en.Symbol}
 		}
 		return w.WriteInt(int32(i))
 	}
@@ -341,7 +341,7 @@ func compileEnum(e avro.Enum, ctx *compileCtx) (*planNode, error) {
 			return nil, err
 		}
 		if int(i) < 0 || int(i) >= len(symbols) {
-			return nil, fmt.Errorf("avro/generic: enum %q: index %d out of range [0, %d)", name, i, len(symbols))
+			return nil, IndexOutOfRangeError{Kind: "enum", Name: name, Index: int64(i), Len: len(symbols)}
 		}
 		return Enum{Symbol: symbols[i]}, nil
 	}
@@ -350,17 +350,17 @@ func compileEnum(e avro.Enum, ctx *compileCtx) (*planNode, error) {
 
 func compileArray(a avro.Array, ctx *compileCtx) (*planNode, error) {
 	if a.Items == nil {
-		return nil, fmt.Errorf("avro/generic: array has nil items schema")
+		return nil, ErrNilArrayItems
 	}
 	item, err := compileSchema(a.Items, ctx)
 	if err != nil {
-		return nil, fmt.Errorf("array items: %w", err)
+		return nil, ItemsCompileError{Err: err}
 	}
 	return &planNode{
 		enc: func(w *avro.BinaryWriter, v Value) error {
 			arr, ok := v.(Array)
 			if !ok {
-				return typeMismatch("array", v)
+				return TypeMismatchError{Expected: "array", Got: v}
 			}
 			if len(arr) > 0 {
 				if err := w.WriteLong(int64(len(arr))); err != nil {
@@ -405,17 +405,17 @@ func compileArray(a avro.Array, ctx *compileCtx) (*planNode, error) {
 
 func compileMap(m avro.Map, ctx *compileCtx) (*planNode, error) {
 	if m.Values == nil {
-		return nil, fmt.Errorf("avro/generic: map has nil values schema")
+		return nil, ErrNilMapValues
 	}
 	val, err := compileSchema(m.Values, ctx)
 	if err != nil {
-		return nil, fmt.Errorf("map values: %w", err)
+		return nil, ValuesCompileError{Err: err}
 	}
 	return &planNode{
 		enc: func(w *avro.BinaryWriter, v Value) error {
 			mp, ok := v.(Map)
 			if !ok {
-				return typeMismatch("map", v)
+				return TypeMismatchError{Expected: "map", Got: v}
 			}
 			if len(mp) > 0 {
 				if err := w.WriteLong(int64(len(mp))); err != nil {
@@ -466,33 +466,33 @@ func compileMap(m avro.Map, ctx *compileCtx) (*planNode, error) {
 
 func compileUnion(u avro.Union, ctx *compileCtx) (*planNode, error) {
 	if len(u.Types) == 0 {
-		return nil, fmt.Errorf("avro/generic: union has no branches")
+		return nil, ErrEmptyUnion
 	}
 	branches := make([]*planNode, len(u.Types))
 	seenUnnamed := make(map[string]struct{})
 	seenNamed := make(map[string]struct{})
 	for i, t := range u.Types {
 		if t == nil {
-			return nil, fmt.Errorf("avro/generic: union branch %d is nil", i)
+			return nil, NilBranchError{Index: i}
 		}
 		if _, nested := t.(avro.Union); nested {
-			return nil, fmt.Errorf("avro/generic: union branch %d is itself a union", i)
+			return nil, NestedUnionError{Index: i}
 		}
 		key, named := unionBranchKey(t)
 		if named {
 			if _, dup := seenNamed[key]; dup {
-				return nil, fmt.Errorf("avro/generic: union: duplicate named branch %q", key)
+				return nil, DuplicateBranchError{Key: key, Named: true}
 			}
 			seenNamed[key] = struct{}{}
 		} else {
 			if _, dup := seenUnnamed[key]; dup {
-				return nil, fmt.Errorf("avro/generic: union: duplicate %s branch", key)
+				return nil, DuplicateBranchError{Key: key, Named: false}
 			}
 			seenUnnamed[key] = struct{}{}
 		}
 		node, err := compileSchema(t, ctx)
 		if err != nil {
-			return nil, fmt.Errorf("union branch %d: %w", i, err)
+			return nil, BranchCompileError{Index: i, Err: err}
 		}
 		branches[i] = node
 	}
@@ -500,10 +500,10 @@ func compileUnion(u avro.Union, ctx *compileCtx) (*planNode, error) {
 		enc: func(w *avro.BinaryWriter, v Value) error {
 			un, ok := v.(Union)
 			if !ok {
-				return typeMismatch("union", v)
+				return TypeMismatchError{Expected: "union", Got: v}
 			}
 			if un.Index < 0 || un.Index >= len(branches) {
-				return fmt.Errorf("avro/generic: union: index %d out of range [0, %d)", un.Index, len(branches))
+				return IndexOutOfRangeError{Kind: "union", Index: int64(un.Index), Len: len(branches)}
 			}
 			if err := w.WriteLong(int64(un.Index)); err != nil {
 				return err
@@ -516,7 +516,7 @@ func compileUnion(u avro.Union, ctx *compileCtx) (*planNode, error) {
 				return nil, err
 			}
 			if i < 0 || int(i) >= len(branches) {
-				return nil, fmt.Errorf("avro/generic: union: index %d out of range [0, %d)", i, len(branches))
+				return nil, IndexOutOfRangeError{Kind: "union", Index: i, Len: len(branches)}
 			}
 			val, err := branches[i].dec(r)
 			if err != nil {
@@ -564,10 +564,10 @@ func unionBranchKey(s avro.Schema) (string, bool) {
 
 func compileFixed(f avro.Fixed, ctx *compileCtx) (*planNode, error) {
 	if f.Name == "" {
-		return nil, fmt.Errorf("avro/generic: fixed missing name")
+		return nil, MissingNameError{Kind: "fixed"}
 	}
 	if f.Size <= 0 {
-		return nil, fmt.Errorf("avro/generic: fixed %q: size must be > 0, got %d", f.Name, f.Size)
+		return nil, InvalidFixedSizeError{Name: f.Name, Size: f.Size}
 	}
 	encPtr := new(encodeFn)
 	decPtr := new(decodeFn)
@@ -581,10 +581,10 @@ func compileFixed(f avro.Fixed, ctx *compileCtx) (*planNode, error) {
 	*encPtr = func(w *avro.BinaryWriter, v Value) error {
 		fx, ok := v.(Fixed)
 		if !ok {
-			return typeMismatch(fmt.Sprintf("fixed %q", name), v)
+			return TypeMismatchError{Expected: fmt.Sprintf("fixed %q", name), Got: v}
 		}
 		if len(fx) != size {
-			return fmt.Errorf("avro/generic: fixed %q: expected %d bytes, got %d", name, size, len(fx))
+			return FixedSizeError{Name: name, Expected: size, Got: len(fx)}
 		}
 		return w.WriteFixed([]byte(fx))
 	}
@@ -602,10 +602,10 @@ func compileFixed(f avro.Fixed, ctx *compileCtx) (*planNode, error) {
 
 func compileDecimal(d avro.Decimal, _ *compileCtx) (*planNode, error) {
 	if d.Precision <= 0 {
-		return nil, fmt.Errorf("avro/generic: decimal: precision must be > 0, got %d", d.Precision)
+		return nil, InvalidPrecisionError{Precision: d.Precision}
 	}
 	if d.Scale < 0 || d.Scale > d.Precision {
-		return nil, fmt.Errorf("avro/generic: decimal: scale %d out of range [0, %d]", d.Scale, d.Precision)
+		return nil, InvalidScaleError{Precision: d.Precision, Scale: d.Scale}
 	}
 	switch under := d.Underlying.(type) {
 	case avro.Bytes:
@@ -614,13 +614,13 @@ func compileDecimal(d avro.Decimal, _ *compileCtx) (*planNode, error) {
 			enc: func(w *avro.BinaryWriter, v Value) error {
 				dec, ok := v.(Decimal)
 				if !ok {
-					return typeMismatch("decimal", v)
+					return TypeMismatchError{Expected: "decimal", Got: v}
 				}
 				if dec.Unscaled == nil {
-					return fmt.Errorf("avro/generic: decimal: nil Unscaled")
+					return ErrNilDecimalUnscaled
 				}
 				if !decimalFits(dec.Unscaled, precision) {
-					return fmt.Errorf("avro/generic: decimal: value exceeds precision %d", precision)
+					return PrecisionOverflowError{Precision: precision}
 				}
 				return w.WriteBytes(twosComplementBytes(dec.Unscaled))
 			},
@@ -634,7 +634,7 @@ func compileDecimal(d avro.Decimal, _ *compileCtx) (*planNode, error) {
 		}, nil
 	case avro.Fixed:
 		if under.Size <= 0 {
-			return nil, fmt.Errorf("avro/generic: decimal: underlying fixed has invalid size %d", under.Size)
+			return nil, InvalidFixedSizeError{Name: under.Name, Size: under.Size}
 		}
 		size := under.Size
 		precision := d.Precision
@@ -642,17 +642,17 @@ func compileDecimal(d avro.Decimal, _ *compileCtx) (*planNode, error) {
 			enc: func(w *avro.BinaryWriter, v Value) error {
 				dec, ok := v.(Decimal)
 				if !ok {
-					return typeMismatch("decimal", v)
+					return TypeMismatchError{Expected: "decimal", Got: v}
 				}
 				if dec.Unscaled == nil {
-					return fmt.Errorf("avro/generic: decimal: nil Unscaled")
+					return ErrNilDecimalUnscaled
 				}
 				if !decimalFits(dec.Unscaled, precision) {
-					return fmt.Errorf("avro/generic: decimal: value exceeds precision %d", precision)
+					return PrecisionOverflowError{Precision: precision}
 				}
 				b := twosComplementBytes(dec.Unscaled)
 				if len(b) > size {
-					return fmt.Errorf("avro/generic: decimal: encoded %d bytes exceeds fixed size %d", len(b), size)
+					return DecimalSizeError{Encoded: len(b), FixedSize: size}
 				}
 				return w.WriteFixed(padTwosComplement(b, size, dec.Unscaled.Sign()))
 			},
@@ -665,7 +665,7 @@ func compileDecimal(d avro.Decimal, _ *compileCtx) (*planNode, error) {
 			},
 		}, nil
 	default:
-		return nil, fmt.Errorf("avro/generic: decimal: underlying must be bytes or fixed, got %T", d.Underlying)
+		return nil, InvalidDecimalUnderlyingError{Underlying: d.Underlying}
 	}
 }
 
@@ -794,7 +794,7 @@ func newLongLogical(name string, wrap func(int64) Value, unwrap func(Value) (int
 // ---- helpers ----
 
 func typeMismatch(want string, got Value) error {
-	return fmt.Errorf("avro/generic: type mismatch: schema expects %s, got %T", want, got)
+	return TypeMismatchError{Expected: want, Got: got}
 }
 
 // twosComplementBytes returns the minimum-length two's-complement big-endian

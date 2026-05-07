@@ -59,14 +59,21 @@ func TestDecoder_RuntimeErrors(t *testing.T) {
 	t.Run("union index out of range", func(t *testing.T) {
 		t.Parallel()
 		_, err := decodeOne(t, avro.Union{Types: []avro.Schema{avro.Null{}, avro.Int{}}}, []byte{0x06})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "out of range")
+		var got IndexOutOfRangeError
+		require.ErrorAs(t, err, &got)
+		require.Equal(t, "union", got.Kind)
+		require.Equal(t, int64(3), got.Index)
+		require.Equal(t, 2, got.Len)
 	})
 
 	t.Run("enum index out of range", func(t *testing.T) {
 		t.Parallel()
 		_, err := decodeOne(t, avro.Enum{Name: "E", Symbols: []string{"A", "B"}}, []byte{0x06})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "out of range")
+		var got IndexOutOfRangeError
+		require.ErrorAs(t, err, &got)
+		require.Equal(t, "enum", got.Kind)
+		require.Equal(t, "E", got.Name)
+		require.Equal(t, int64(3), got.Index)
+		require.Equal(t, 2, got.Len)
 	})
 }
