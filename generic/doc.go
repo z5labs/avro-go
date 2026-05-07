@@ -15,5 +15,5 @@
 //
 // An Encoder or Decoder is read-only after construction and is safe for
 // concurrent use across goroutines as long as each call supplies its own
-// *avro.BinaryWriter or *avro.BinaryReader.
+// io.Writer or io.Reader.
 package generic

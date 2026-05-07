@@ -71,6 +71,22 @@ func (e InvalidDecimalUnderlyingError) Error() string {
 	return fmt.Sprintf("avro: decimal underlying must be bytes or fixed, got %T", e.Underlying)
 }
 
+// InvalidOrderError reports a Field with an Order outside the spec's
+// {ascending, descending, ignore} set.
+type InvalidOrderError struct{ Order Order }
+
+func (e InvalidOrderError) Error() string {
+	return fmt.Sprintf("avro: invalid field order %d", int(e.Order))
+}
+
+// InvalidOrderStringError reports a Field whose JSON "order" value is not
+// one of "ascending", "descending", or "ignore".
+type InvalidOrderStringError struct{ Value string }
+
+func (e InvalidOrderStringError) Error() string {
+	return fmt.Sprintf("avro: invalid field order %q", e.Value)
+}
+
 // ---- primitive marshalers ----
 
 func (Null) MarshalJSON() ([]byte, error)    { return []byte(`"null"`), nil }
@@ -100,12 +116,25 @@ func (r Record) MarshalJSON() ([]byte, error) {
 }
 
 func (f Field) MarshalJSON() ([]byte, error) {
+	var order string
+	switch f.Order {
+	case OrderAscending:
+		// spec default; omit
+	case OrderDescending:
+		order = "descending"
+	case OrderIgnore:
+		order = "ignore"
+	default:
+		return nil, InvalidOrderError{Order: f.Order}
+	}
 	return json.Marshal(struct {
 		Name    string   `json:"name"`
 		Doc     string   `json:"doc,omitempty"`
 		Aliases []string `json:"aliases,omitempty"`
 		Type    Schema   `json:"type"`
-	}{f.Name, f.Doc, f.Aliases, f.Type})
+		Default any      `json:"default,omitempty"`
+		Order   string   `json:"order,omitempty"`
+	}{f.Name, f.Doc, f.Aliases, f.Type, f.Default, order})
 }
 
 func (e Enum) MarshalJSON() ([]byte, error) {
@@ -398,11 +427,33 @@ func parseField(data []byte, namespace string) (*Field, error) {
 		return nil, err
 	}
 	f.Type = t
+	if rawDefault, ok := fobj["default"]; ok {
+		var v any
+		if err := json.Unmarshal(rawDefault, &v); err != nil {
+			return nil, err
+		}
+		f.Default = v
+	}
+	if rawOrder, ok := fobj["order"]; ok {
+		var s string
+		if err := json.Unmarshal(rawOrder, &s); err != nil {
+			return nil, err
+		}
+		switch s {
+		case "ascending":
+			f.Order = OrderAscending
+		case "descending":
+			f.Order = OrderDescending
+		case "ignore":
+			f.Order = OrderIgnore
+		default:
+			return nil, InvalidOrderStringError{Value: s}
+		}
+	}
 	return f, nil
 }
 
 func parseEnum(obj map[string]json.RawMessage, namespace string) (Enum, error) {
-	_ = namespace
 	e := Enum{}
 	if err := unmarshalIfPresent(obj, "name", &e.Name); err != nil {
 		return e, err
@@ -412,6 +463,9 @@ func parseEnum(obj map[string]json.RawMessage, namespace string) (Enum, error) {
 	}
 	if err := unmarshalIfPresent(obj, "namespace", &e.Namespace); err != nil {
 		return e, err
+	}
+	if e.Namespace == "" {
+		e.Namespace = namespace
 	}
 	if err := unmarshalIfPresent(obj, "doc", &e.Doc); err != nil {
 		return e, err
@@ -455,7 +509,7 @@ func parseMap(obj map[string]json.RawMessage, namespace string) (Map, error) {
 	return Map{Values: values}, nil
 }
 
-func parseFixed(obj map[string]json.RawMessage, _ string) (Fixed, error) {
+func parseFixed(obj map[string]json.RawMessage, namespace string) (Fixed, error) {
 	f := Fixed{}
 	if err := unmarshalIfPresent(obj, "name", &f.Name); err != nil {
 		return f, err
@@ -465,6 +519,9 @@ func parseFixed(obj map[string]json.RawMessage, _ string) (Fixed, error) {
 	}
 	if err := unmarshalIfPresent(obj, "namespace", &f.Namespace); err != nil {
 		return f, err
+	}
+	if f.Namespace == "" {
+		f.Namespace = namespace
 	}
 	if err := unmarshalIfPresent(obj, "aliases", &f.Aliases); err != nil {
 		return f, err
@@ -481,6 +538,9 @@ func parseFixed(obj map[string]json.RawMessage, _ string) (Fixed, error) {
 func parseLogical(under, lt string, obj map[string]json.RawMessage, namespace string) (Schema, error) {
 	switch lt {
 	case "decimal":
+		if _, ok := obj["precision"]; !ok {
+			return nil, MissingFieldError{Type: "decimal", Field: "precision"}
+		}
 		var precision, scale int
 		if err := unmarshalIfPresent(obj, "precision", &precision); err != nil {
 			return nil, err

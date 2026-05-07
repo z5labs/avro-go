@@ -274,4 +274,88 @@ func TestParseJSON_Errors(t *testing.T) {
 		require.ErrorAs(t, err, &got)
 		require.Equal(t, "size", got.Field)
 	})
+
+	t.Run("missing decimal precision", func(t *testing.T) {
+		t.Parallel()
+		_, err := ParseJSON([]byte(`{"type":"bytes","logicalType":"decimal","scale":2}`))
+		var got MissingFieldError
+		require.ErrorAs(t, err, &got)
+		require.Equal(t, "decimal", got.Type)
+		require.Equal(t, "precision", got.Field)
+	})
+
+	t.Run("invalid order string", func(t *testing.T) {
+		t.Parallel()
+		_, err := ParseJSON([]byte(`{"type":"record","name":"R","fields":[{"name":"a","type":"int","order":"sideways"}]}`))
+		var got InvalidOrderStringError
+		require.ErrorAs(t, err, &got)
+		require.Equal(t, "sideways", got.Value)
+	})
+}
+
+// TestParseJSON_NamespaceInheritance verifies that nested named types without
+// an explicit "namespace" inherit the enclosing record's namespace, so Refs
+// resolve consistently regardless of where the type is defined.
+func TestParseJSON_NamespaceInheritance(t *testing.T) {
+	t.Parallel()
+
+	src := `{
+        "type": "record",
+        "name": "Outer",
+        "namespace": "com.example",
+        "fields": [
+            {"name": "color", "type": {"type": "enum", "name": "Color", "symbols": ["RED"]}},
+            {"name": "hash",  "type": {"type": "fixed", "name": "MD5", "size": 16}}
+        ]
+    }`
+	got, err := ParseJSON([]byte(src))
+	require.NoError(t, err)
+
+	rec := got.(Record)
+	enum := rec.Fields[0].Type.(Enum)
+	fixed := rec.Fields[1].Type.(Fixed)
+	require.Equal(t, "com.example", enum.Namespace)
+	require.Equal(t, "com.example", fixed.Namespace)
+}
+
+func TestField_DefaultAndOrderRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name  string
+		field *Field
+	}{
+		{
+			name:  "default string",
+			field: &Field{Name: "x", Type: String{}, Default: "hello"},
+		},
+		{
+			name:  "default null",
+			field: &Field{Name: "x", Type: Union{Types: []Schema{Null{}, String{}}}, Default: nil},
+		},
+		{
+			name:  "order descending",
+			field: &Field{Name: "x", Type: Long{}, Order: OrderDescending},
+		},
+		{
+			name:  "order ignore with default",
+			field: &Field{Name: "x", Type: Boolean{}, Default: true, Order: OrderIgnore},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			schema := Record{Name: "R", Fields: []*Field{tc.field}}
+			data, err := json.Marshal(schema)
+			require.NoError(t, err)
+
+			got, err := ParseJSON(data)
+			require.NoError(t, err)
+			rec := got.(Record)
+			require.Equal(t, tc.field.Name, rec.Fields[0].Name)
+			require.Equal(t, tc.field.Order, rec.Fields[0].Order)
+			require.Equal(t, tc.field.Default, rec.Fields[0].Default)
+		})
+	}
 }

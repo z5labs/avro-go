@@ -15,7 +15,7 @@ import (
 // avro.Schema.
 //
 // A Decoder is read-only after construction and is safe for concurrent use as
-// long as callers supply their own *avro.BinaryReader per call.
+// long as callers supply their own io.Reader per call.
 type Decoder struct {
 	dec decodeFn
 }

@@ -14,7 +14,7 @@ import (
 // Encoder encodes generic Values against a compiled avro.Schema.
 //
 // An Encoder is read-only after construction and is safe for concurrent use as
-// long as callers supply their own *avro.BinaryWriter per call.
+// long as callers supply their own io.Writer per call.
 type Encoder struct {
 	enc encodeFn
 }

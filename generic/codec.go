@@ -515,7 +515,7 @@ func compileUnion(u avro.Union, ctx *compileCtx) (*planNode, error) {
 			if err != nil {
 				return nil, err
 			}
-			if i < 0 || int(i) >= len(branches) {
+			if i < 0 || i >= int64(len(branches)) {
 				return nil, IndexOutOfRangeError{Kind: "union", Index: i, Len: len(branches)}
 			}
 			val, err := branches[i].dec(r)
