@@ -3,7 +3,7 @@
 // This software is released under the MIT License.
 // https://opensource.org/licenses/MIT
 
-package generic_test
+package generic
 
 import (
 	"bytes"
@@ -11,27 +11,26 @@ import (
 	"fmt"
 
 	"github.com/z5labs/avro-go"
-	"github.com/z5labs/avro-go/generic"
 )
 
-// schemaWriter adapts an *Encoder/Value pair to avro.BinaryMarshaler so it can
-// be passed to avro.MarshalBinary.
-type schemaWriter struct {
-	enc *generic.Encoder
-	v   generic.Value
+// exampleWriter adapts an *Encoder/Value pair to avro.BinaryMarshaler so it
+// can be passed to avro.MarshalBinary.
+type exampleWriter struct {
+	enc *Encoder
+	v   Value
 }
 
-func (s schemaWriter) MarshalAvroBinary(w *avro.BinaryWriter) error {
+func (s exampleWriter) MarshalAvroBinary(w *avro.BinaryWriter) error {
 	return s.enc.Encode(w, s.v)
 }
 
-// schemaReader adapts a *Decoder to avro.BinaryUnmarshaler.
-type schemaReader struct {
-	dec *generic.Decoder
-	out *generic.Value
+// exampleReader adapts a *Decoder to avro.BinaryUnmarshaler.
+type exampleReader struct {
+	dec *Decoder
+	out *Value
 }
 
-func (s schemaReader) UnmarshalAvroBinary(r *avro.BinaryReader) error {
+func (s exampleReader) UnmarshalAvroBinary(r *avro.BinaryReader) error {
 	v, err := s.dec.Decode(r)
 	if err != nil {
 		return err
@@ -50,19 +49,19 @@ func ExampleEncoder() {
 		},
 	}
 
-	enc, err := generic.NewEncoder(schema)
+	enc, err := NewEncoder(schema)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 
-	user := generic.Record{Fields: []generic.Field{
-		{Name: "id", Value: generic.Long(1)},
-		{Name: "name", Value: generic.String("ada")},
+	user := Record{Fields: []Field{
+		{Name: "id", Value: Long(1)},
+		{Name: "name", Value: String("ada")},
 	}}
 
 	var buf bytes.Buffer
-	if err := avro.MarshalBinary(&buf, schemaWriter{enc: enc, v: user}); err != nil {
+	if err := avro.MarshalBinary(&buf, exampleWriter{enc: enc, v: user}); err != nil {
 		fmt.Println(err)
 		return
 	}
@@ -75,7 +74,7 @@ func ExampleEncoder() {
 // ExampleDecoder shows the canonical "decode a union" flow.
 func ExampleDecoder() {
 	schema := avro.Union{Types: []avro.Schema{avro.Null{}, avro.String{}}}
-	dec, err := generic.NewDecoder(schema)
+	dec, err := NewDecoder(schema)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -84,14 +83,14 @@ func ExampleDecoder() {
 	// Wire bytes for union index 1 + string "hi".
 	data := []byte{0x02, 0x04, 'h', 'i'}
 
-	var v generic.Value
-	if err := avro.UnmarshalBinary(bytes.NewReader(data), schemaReader{dec: dec, out: &v}); err != nil {
+	var v Value
+	if err := avro.UnmarshalBinary(bytes.NewReader(data), exampleReader{dec: dec, out: &v}); err != nil {
 		fmt.Println(err)
 		return
 	}
 
-	u := v.(generic.Union)
-	fmt.Printf("index=%d value=%q\n", u.Index, string(u.Value.(generic.String)))
+	u := v.(Union)
+	fmt.Printf("index=%d value=%q\n", u.Index, string(u.Value.(String)))
 	// Output: index=1 value="hi"
 }
 
@@ -105,21 +104,21 @@ func ExampleEncoder_reuse() {
 			{Name: "y", Type: avro.Long{}},
 		},
 	}
-	enc, err := generic.NewEncoder(schema)
+	enc, err := NewEncoder(schema)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 
-	points := []generic.Record{
-		{Fields: []generic.Field{{Name: "x", Value: generic.Long(0)}, {Name: "y", Value: generic.Long(0)}}},
-		{Fields: []generic.Field{{Name: "x", Value: generic.Long(1)}, {Name: "y", Value: generic.Long(2)}}},
-		{Fields: []generic.Field{{Name: "x", Value: generic.Long(3)}, {Name: "y", Value: generic.Long(4)}}},
+	points := []Record{
+		{Fields: []Field{{Name: "x", Value: Long(0)}, {Name: "y", Value: Long(0)}}},
+		{Fields: []Field{{Name: "x", Value: Long(1)}, {Name: "y", Value: Long(2)}}},
+		{Fields: []Field{{Name: "x", Value: Long(3)}, {Name: "y", Value: Long(4)}}},
 	}
 
 	var buf bytes.Buffer
 	for _, p := range points {
-		if err := avro.MarshalBinary(&buf, schemaWriter{enc: enc, v: p}); err != nil {
+		if err := avro.MarshalBinary(&buf, exampleWriter{enc: enc, v: p}); err != nil {
 			fmt.Println(err)
 			return
 		}
