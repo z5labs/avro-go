@@ -243,9 +243,22 @@ func (LocalTimestampNanos) MarshalJSON() ([]byte, error) {
 	return []byte(`{"type":"long","logicalType":"local-timestamp-nanos"}`), nil
 }
 
-func (Duration) MarshalJSON() ([]byte, error) {
-	// Avro requires fixed types to have a name; "duration" is conventional.
-	return []byte(`{"type":"fixed","name":"duration","size":12,"logicalType":"duration"}`), nil
+func (d Duration) MarshalJSON() ([]byte, error) {
+	// "duration" is the conventional name when none is supplied; the Underlying
+	// Fixed otherwise carries the user-chosen name/namespace/aliases so that
+	// JSON round-trips preserve identity.
+	name := d.Underlying.Name
+	if name == "" {
+		name = "duration"
+	}
+	return json.Marshal(struct {
+		Type        string   `json:"type"`
+		LogicalType string   `json:"logicalType"`
+		Name        string   `json:"name"`
+		Namespace   string   `json:"namespace,omitempty"`
+		Aliases     []string `json:"aliases,omitempty"`
+		Size        int      `json:"size"`
+	}{"fixed", "duration", name, d.Underlying.Namespace, d.Underlying.Aliases, 12})
 }
 
 // ---- parser ----
@@ -616,7 +629,7 @@ func parseLogical(under, lt string, obj map[string]json.RawMessage, namespace st
 		if !ok || fx.Size != 12 {
 			return underlying, nil
 		}
-		return Duration{}, nil
+		return Duration{Underlying: fx}, nil
 	default:
 		// Unknown logical type: per spec, ignore and use the underlying type.
 		return underlying, nil

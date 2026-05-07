@@ -95,7 +95,12 @@ func TestSchema_MarshalJSON(t *testing.T) {
 		{name: "local-timestamp-millis", schema: LocalTimestampMillis{}, want: `{"type":"long","logicalType":"local-timestamp-millis"}`},
 		{name: "local-timestamp-micros", schema: LocalTimestampMicros{}, want: `{"type":"long","logicalType":"local-timestamp-micros"}`},
 		{name: "local-timestamp-nanos", schema: LocalTimestampNanos{}, want: `{"type":"long","logicalType":"local-timestamp-nanos"}`},
-		{name: "duration", schema: Duration{}, want: `{"type":"fixed","name":"duration","size":12,"logicalType":"duration"}`},
+		{name: "duration default name", schema: Duration{}, want: `{"type":"fixed","name":"duration","size":12,"logicalType":"duration"}`},
+		{
+			name:   "duration custom name",
+			schema: Duration{Underlying: Fixed{Name: "Elapsed", Namespace: "com.example", Size: 12}},
+			want:   `{"type":"fixed","logicalType":"duration","name":"Elapsed","namespace":"com.example","size":12}`,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -149,7 +154,11 @@ func TestParseJSON(t *testing.T) {
 		},
 		{name: "uuid", json: `{"type":"string","logicalType":"uuid"}`, want: UUID{}},
 		{name: "date", json: `{"type":"int","logicalType":"date"}`, want: Date{}},
-		{name: "duration", json: `{"type":"fixed","name":"duration","size":12,"logicalType":"duration"}`, want: Duration{}},
+		{
+			name: "duration",
+			json: `{"type":"fixed","name":"duration","size":12,"logicalType":"duration"}`,
+			want: Duration{Underlying: Fixed{Name: "duration", Size: 12}},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -222,7 +231,14 @@ func TestSchemaJSON_RoundTrip(t *testing.T) {
 		{name: "local-timestamp-millis", schema: LocalTimestampMillis{}},
 		{name: "local-timestamp-micros", schema: LocalTimestampMicros{}},
 		{name: "local-timestamp-nanos", schema: LocalTimestampNanos{}},
-		{name: "duration", schema: Duration{}},
+		{
+			name:   "duration default name",
+			schema: Duration{Underlying: Fixed{Name: "duration", Size: 12}},
+		},
+		{
+			name:   "duration custom name",
+			schema: Duration{Underlying: Fixed{Name: "Elapsed", Namespace: "com.example", Size: 12}},
+		},
 	}
 
 	for _, tc := range testCases {

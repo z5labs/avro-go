@@ -81,7 +81,7 @@ func compileSchema(s avro.Schema, ctx *compileCtx, namespace string) (*planNode,
 	case avro.LocalTimestampNanos:
 		return localTimestampNanosPlan, nil
 	case avro.Duration:
-		return durationPlan, nil
+		return compileDuration(t, ctx, namespace)
 	default:
 		return nil, UnsupportedSchemaError{Schema: s}
 	}
@@ -543,6 +543,11 @@ func compileUnion(u avro.Union, ctx *compileCtx, namespace string) (*planNode, e
 	}, nil
 }
 
+// unionBranchKey returns the Avro identity key for a union branch and whether
+// the key is for a named type. Per the Avro spec, a union may not contain two
+// schemas with the same wire type; logical types collapse to the identity of
+// their underlying schema so e.g. [int, date] or [bytes, decimal-over-bytes]
+// are correctly detected as duplicates.
 func unionBranchKey(s avro.Schema, namespace string) (string, bool) {
 	resolveNS := func(declared string) string {
 		if declared != "" {
@@ -579,6 +584,27 @@ func unionBranchKey(s avro.Schema, namespace string) (string, bool) {
 		return fullName(t.Name, resolveNS(t.Namespace)), true
 	case avro.Ref:
 		return fullName(t.Name, resolveNS(t.Namespace)), true
+	case avro.UUID:
+		return "string", false
+	case avro.Date, avro.TimeMillis:
+		return "int", false
+	case avro.TimeMicros,
+		avro.TimestampMillis, avro.TimestampMicros, avro.TimestampNanos,
+		avro.LocalTimestampMillis, avro.LocalTimestampMicros, avro.LocalTimestampNanos:
+		return "long", false
+	case avro.Decimal:
+		switch under := t.Underlying.(type) {
+		case avro.Fixed:
+			return fullName(under.Name, resolveNS(under.Namespace)), true
+		default:
+			return "bytes", false
+		}
+	case avro.Duration:
+		name := t.Underlying.Name
+		if name == "" {
+			name = "duration"
+		}
+		return fullName(name, resolveNS(t.Underlying.Namespace)), true
 	default:
 		return fmt.Sprintf("%T", s), false
 	}
@@ -768,31 +794,57 @@ var (
 		func(v Value) (int64, bool) { x, ok := v.(LocalTimestampNanos); return int64(x), ok },
 	)
 
-	durationPlan = &planNode{
-		enc: func(w *avro.BinaryWriter, v Value) error {
-			d, ok := v.(Duration)
-			if !ok {
-				return typeMismatch("duration", v)
-			}
-			var buf [12]byte
-			binary.LittleEndian.PutUint32(buf[0:4], d.Months)
-			binary.LittleEndian.PutUint32(buf[4:8], d.Days)
-			binary.LittleEndian.PutUint32(buf[8:12], d.Millis)
-			return w.WriteFixed(buf[:])
-		},
-		dec: func(r *avro.BinaryReader) (Value, error) {
-			b, err := r.ReadFixed(12)
-			if err != nil {
-				return nil, err
-			}
-			return Duration{
-				Months: binary.LittleEndian.Uint32(b[0:4]),
-				Days:   binary.LittleEndian.Uint32(b[4:8]),
-				Millis: binary.LittleEndian.Uint32(b[8:12]),
-			}, nil
-		},
-	}
 )
+
+// compileDuration validates an Avro duration schema and registers its
+// underlying Fixed name so Refs can resolve to the same plan, mirroring the
+// decimal-over-fixed pattern. An empty Underlying.Name defaults to "duration"
+// to match Duration.MarshalJSON's convention.
+func compileDuration(d avro.Duration, ctx *compileCtx, namespace string) (*planNode, error) {
+	under := d.Underlying
+	if under.Size != 0 && under.Size != 12 {
+		return nil, InvalidFixedSizeError{Name: under.Name, Size: under.Size}
+	}
+	name := under.Name
+	if name == "" {
+		name = "duration"
+	}
+	ns := under.Namespace
+	if ns == "" {
+		ns = namespace
+	}
+
+	encPtr := new(encodeFn)
+	decPtr := new(decodeFn)
+	if err := ctx.registerNamed(name, ns, &namedEntry{
+		kind: namedFixed, schema: d, enc: encPtr, dec: decPtr, size: 12,
+	}); err != nil {
+		return nil, err
+	}
+	*encPtr = func(w *avro.BinaryWriter, v Value) error {
+		dv, ok := v.(Duration)
+		if !ok {
+			return typeMismatch("duration", v)
+		}
+		var buf [12]byte
+		binary.LittleEndian.PutUint32(buf[0:4], dv.Months)
+		binary.LittleEndian.PutUint32(buf[4:8], dv.Days)
+		binary.LittleEndian.PutUint32(buf[8:12], dv.Millis)
+		return w.WriteFixed(buf[:])
+	}
+	*decPtr = func(r *avro.BinaryReader) (Value, error) {
+		b, err := r.ReadFixed(12)
+		if err != nil {
+			return nil, err
+		}
+		return Duration{
+			Months: binary.LittleEndian.Uint32(b[0:4]),
+			Days:   binary.LittleEndian.Uint32(b[4:8]),
+			Millis: binary.LittleEndian.Uint32(b[8:12]),
+		}, nil
+	}
+	return &planNode{enc: *encPtr, dec: *decPtr}, nil
+}
 
 // newIntLogical builds a plan for an int-backed logical type. unwrap converts
 // a Value to its int32 wire form (returning ok=false on type mismatch); wrap

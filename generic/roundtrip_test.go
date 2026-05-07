@@ -198,6 +198,73 @@ func TestRoundTrip_RefInheritsEnclosingNamespace(t *testing.T) {
 	require.Equal(t, v, got)
 }
 
+// TestRoundTrip_DurationRefReuse verifies that a duration registers its
+// underlying fixed name so a Ref to that name resolves to the same duration
+// plan, mirroring decimal-over-fixed.
+func TestRoundTrip_DurationRefReuse(t *testing.T) {
+	t.Parallel()
+
+	dur := avro.Duration{Underlying: avro.Fixed{Name: "Elapsed", Namespace: "com.example", Size: 12}}
+	schema := avro.Record{
+		Name:      "Window",
+		Namespace: "com.example",
+		Fields: []*avro.Field{
+			{Name: "first", Type: dur},
+			{Name: "second", Type: avro.Ref{Name: "Elapsed"}},
+		},
+	}
+	v := Record{Fields: []Field{
+		{Name: "first", Value: Duration{Months: 1, Days: 2, Millis: 3}},
+		{Name: "second", Value: Duration{Months: 4, Days: 5, Millis: 6}},
+	}}
+	got := roundTrip(t, schema, v)
+	require.Equal(t, v, got)
+}
+
+// TestNewEncoder_DuplicateLogicalBranches checks that a union containing two
+// branches that share the same wire type (logical or not) is rejected per the
+// Avro spec rule "no duplicate types in a union".
+func TestNewEncoder_DuplicateLogicalBranches(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name   string
+		schema avro.Schema
+		key    string
+	}{
+		{
+			name:   "int and date",
+			schema: avro.Union{Types: []avro.Schema{avro.Int{}, avro.Date{}}},
+			key:    "int",
+		},
+		{
+			name:   "string and uuid",
+			schema: avro.Union{Types: []avro.Schema{avro.String{}, avro.UUID{}}},
+			key:    "string",
+		},
+		{
+			name:   "long and timestamp-millis",
+			schema: avro.Union{Types: []avro.Schema{avro.Long{}, avro.TimestampMillis{}}},
+			key:    "long",
+		},
+		{
+			name:   "bytes and decimal-over-bytes",
+			schema: avro.Union{Types: []avro.Schema{avro.Bytes{}, avro.Decimal{Precision: 4, Underlying: avro.Bytes{}}}},
+			key:    "bytes",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := NewEncoder(tc.schema)
+			var got DuplicateBranchError
+			require.ErrorAs(t, err, &got)
+			require.Equal(t, tc.key, got.Key)
+		})
+	}
+}
+
 // TestRoundTrip_DecimalOverFixedRefReuse verifies that a decimal-over-fixed
 // registers its underlying fixed name, so a later Ref to that name resolves
 // to the same decimal plan rather than a raw fixed-bytes plan.

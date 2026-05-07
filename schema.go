@@ -10,6 +10,10 @@ package avro
 //
 // Schema values are pure data; all validation is performed by the codecs that
 // consume them (e.g. github.com/z5labs/avro-go/generic.NewEncoder).
+//
+// Codecs in this module match concrete schema kinds by value type. Pointer
+// values (e.g. *Record) satisfy the Schema interface but are not accepted by
+// the codecs and will be rejected with an unsupported-schema error.
 type Schema interface {
 	schema()
 }
@@ -216,9 +220,11 @@ type LocalTimestampNanos struct{}
 
 func (LocalTimestampNanos) schema() {}
 
-// Duration is the Avro "duration" logical type, backed by Fixed of size 12.
-// The wire form is three little-endian unsigned 32-bit integers: months, days,
-// and milliseconds.
-type Duration struct{}
+// Duration is the Avro "duration" logical type. It must be backed by a Fixed
+// schema whose Size is 12. The wire form is three little-endian unsigned
+// 32-bit integers: months, days, and milliseconds.
+type Duration struct {
+	Underlying Fixed
+}
 
 func (Duration) schema() {}
