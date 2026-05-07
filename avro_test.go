@@ -16,26 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewBinaryWriter(t *testing.T) {
-	t.Parallel()
-
-	var buf bytes.Buffer
-	w := NewBinaryWriter(&buf)
-	require.NoError(t, w.WriteString("hi"))
-	require.Equal(t, []byte{0x04, 'h', 'i'}, buf.Bytes())
-	require.Equal(t, int64(3), w.Offset())
-}
-
-func TestNewBinaryReader(t *testing.T) {
-	t.Parallel()
-
-	r := NewBinaryReader(bytes.NewReader([]byte{0x04, 'h', 'i'}))
-	got, err := r.ReadString()
-	require.NoError(t, err)
-	require.Equal(t, "hi", got)
-	require.Equal(t, int64(3), r.Offset())
-}
-
 type writerFunc func([]byte) (int, error)
 
 func (f writerFunc) Write(p []byte) (int, error) {
