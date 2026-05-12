@@ -415,6 +415,12 @@ func parseRecord(obj map[string]json.RawMessage, namespace string) (Record, erro
 	if err := json.Unmarshal(rawFields, &rawList); err != nil {
 		return r, err
 	}
+	// json.Unmarshal accepts a JSON null into a slice (yielding nil). The Avro
+	// spec requires "fields" to be an array, so reject null explicitly rather
+	// than silently treating a malformed schema as an empty record.
+	if rawList == nil {
+		return r, MissingFieldError{Type: "record", Field: "fields"}
+	}
 	r.Fields = make([]*Field, len(rawList))
 	for i, raw := range rawList {
 		f, err := parseField(raw, ns)

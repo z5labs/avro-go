@@ -64,7 +64,7 @@ func TestRecordFields(t *testing.T) {
 		Fields: []*Field{
 			{Name: "id", Type: Long{}, Order: OrderAscending},
 			{Name: "email", Type: Union{Types: []Schema{Null{}, String{}}}, HasDefault: true, Default: nil},
-			{Name: "tags", Type: Array{Items: String{}}, Default: []any{}},
+			{Name: "tags", Type: Array{Items: String{}}, HasDefault: true, Default: []any{}},
 		},
 	}
 

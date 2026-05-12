@@ -220,9 +220,11 @@ type LocalTimestampNanos struct{}
 
 func (LocalTimestampNanos) schema() {}
 
-// Duration is the Avro "duration" logical type. It must be backed by a Fixed
-// schema whose Size is 12. The wire form is three little-endian unsigned
-// 32-bit integers: months, days, and milliseconds.
+// Duration is the Avro "duration" logical type. It is backed by a Fixed
+// schema whose Size is 12; Underlying.Size may be left as 0 (unspecified)
+// and is treated as 12 by MarshalJSON and the generic codec. Any other size
+// is rejected. The wire form is three little-endian unsigned 32-bit
+// integers: months, days, and milliseconds.
 type Duration struct {
 	Underlying Fixed
 }
