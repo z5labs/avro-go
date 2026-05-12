@@ -160,6 +160,14 @@ func (e InvalidFixedSizeError) Error() string {
 	return fmt.Sprintf("avro/generic: fixed %q: size must be > 0, got %d", e.Name, e.Size)
 }
 
+// InvalidDurationSizeError reports a Duration schema whose Underlying.Size
+// is set to a value other than 12 (the size required by the Avro spec).
+type InvalidDurationSizeError struct{ Size int }
+
+func (e InvalidDurationSizeError) Error() string {
+	return fmt.Sprintf("avro/generic: duration: underlying size must be 12, got %d", e.Size)
+}
+
 // NilBranchError reports a nil schema in a Union's Types slice.
 type NilBranchError struct{ Index int }
 

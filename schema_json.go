@@ -60,6 +60,14 @@ func (e InvalidDecimalUnderlyingError) Error() string {
 	return fmt.Sprintf("avro: decimal underlying must be bytes or fixed, got %T", e.Underlying)
 }
 
+// InvalidDurationSizeError reports a Duration whose Underlying.Size is set
+// to a value other than 12 (the size required by the Avro spec).
+type InvalidDurationSizeError struct{ Size int }
+
+func (e InvalidDurationSizeError) Error() string {
+	return fmt.Sprintf("avro: duration underlying size must be 12, got %d", e.Size)
+}
+
 // InvalidOrderError reports a Field with an Order outside the spec's
 // {ascending, descending, ignore} set.
 type InvalidOrderError struct{ Order Order }
@@ -244,6 +252,12 @@ func (LocalTimestampNanos) MarshalJSON() ([]byte, error) {
 }
 
 func (d Duration) MarshalJSON() ([]byte, error) {
+	// The Avro spec fixes a duration's underlying fixed size at 12 bytes. Size
+	// 0 means the caller did not specify a size (we then emit the canonical
+	// 12); any other value would silently misrepresent the in-memory schema.
+	if d.Underlying.Size != 0 && d.Underlying.Size != 12 {
+		return nil, InvalidDurationSizeError{Size: d.Underlying.Size}
+	}
 	// "duration" is the conventional name when none is supplied; the Underlying
 	// Fixed otherwise carries the user-chosen name/namespace/aliases so that
 	// JSON round-trips preserve identity.

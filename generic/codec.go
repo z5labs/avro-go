@@ -494,6 +494,16 @@ func compileUnion(u avro.Union, ctx *compileCtx, namespace string) (*planNode, e
 		if _, nested := t.(avro.Union); nested {
 			return nil, NestedUnionError{Index: i}
 		}
+		// Compile (and thus validate) each branch before checking for duplicate
+		// keys. Otherwise a schema-level error in a branch (e.g. a decimal with
+		// an invalid underlying) is masked by a spurious DuplicateBranchError
+		// when the invalid branch's key collapses to the same wire type as an
+		// earlier branch.
+		node, err := compileSchema(t, ctx, namespace)
+		if err != nil {
+			return nil, BranchCompileError{Index: i, Err: err}
+		}
+		branches[i] = node
 		key, named := unionBranchKey(t, namespace)
 		if named {
 			if _, dup := seenNamed[key]; dup {
@@ -506,11 +516,6 @@ func compileUnion(u avro.Union, ctx *compileCtx, namespace string) (*planNode, e
 			}
 			seenUnnamed[key] = struct{}{}
 		}
-		node, err := compileSchema(t, ctx, namespace)
-		if err != nil {
-			return nil, BranchCompileError{Index: i, Err: err}
-		}
-		branches[i] = node
 	}
 	return &planNode{
 		enc: func(w *avro.BinaryWriter, v Value) error {
@@ -803,7 +808,7 @@ var (
 func compileDuration(d avro.Duration, ctx *compileCtx, namespace string) (*planNode, error) {
 	under := d.Underlying
 	if under.Size != 0 && under.Size != 12 {
-		return nil, InvalidFixedSizeError{Name: under.Name, Size: under.Size}
+		return nil, InvalidDurationSizeError{Size: under.Size}
 	}
 	name := under.Name
 	if name == "" {
