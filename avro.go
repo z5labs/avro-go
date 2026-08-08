@@ -27,6 +27,10 @@ func MarshalBinary(w io.Writer, v BinaryMarshaler) error {
 type BinaryWriter struct {
 	out    io.Writer
 	offset int64
+
+	// scratch backs the fixed-size encodings so that they do not escape to the
+	// heap on every write. Its contents never outlive a single method call.
+	scratch [binary.MaxVarintLen64]byte
 }
 
 // NewBinaryWriter returns a BinaryWriter that writes to w.
@@ -63,11 +67,11 @@ func (w *BinaryWriter) wrapErr(err error, bytesWritten int) error {
 
 // WriteBool writes a boolean value to the writer. It writes 1 for true and 0 for false.
 func (w *BinaryWriter) WriteBool(b bool) error {
-	var value byte
+	w.scratch[0] = 0
 	if b {
-		value = 1
+		w.scratch[0] = 1
 	}
-	n, err := w.out.Write([]byte{value})
+	n, err := w.out.Write(w.scratch[:1])
 	if err != nil {
 		return w.wrapErr(err, n)
 	}
@@ -85,9 +89,8 @@ func (w *BinaryWriter) WriteInt(i int32) error {
 
 // WriteLong writes a 64-bit integer to the writer using variable-length zigzag encoding.
 func (w *BinaryWriter) WriteLong(l int64) error {
-	var buf [binary.MaxVarintLen64]byte
-	n := binary.PutVarint(buf[:], l)
-	nw, err := w.out.Write(buf[:n])
+	n := binary.PutVarint(w.scratch[:], l)
+	nw, err := w.out.Write(w.scratch[:n])
 	if err != nil {
 		return w.wrapErr(err, nw)
 	}
@@ -100,9 +103,8 @@ func (w *BinaryWriter) WriteLong(l int64) error {
 
 // WriteFloat writes a 32-bit floating-point number to the writer in little-endian format.
 func (w *BinaryWriter) WriteFloat(f float32) error {
-	var buf [4]byte
-	binary.LittleEndian.PutUint32(buf[:], math.Float32bits(f))
-	nw, err := w.out.Write(buf[:])
+	binary.LittleEndian.PutUint32(w.scratch[:4], math.Float32bits(f))
+	nw, err := w.out.Write(w.scratch[:4])
 	if err != nil {
 		return w.wrapErr(err, nw)
 	}
@@ -115,9 +117,8 @@ func (w *BinaryWriter) WriteFloat(f float32) error {
 
 // WriteDouble writes a 64-bit floating-point number to the writer in little-endian format.
 func (w *BinaryWriter) WriteDouble(d float64) error {
-	var buf [8]byte
-	binary.LittleEndian.PutUint64(buf[:], math.Float64bits(d))
-	nw, err := w.out.Write(buf[:])
+	binary.LittleEndian.PutUint64(w.scratch[:8], math.Float64bits(d))
+	nw, err := w.out.Write(w.scratch[:8])
 	if err != nil {
 		return w.wrapErr(err, nw)
 	}
@@ -187,6 +188,11 @@ func UnmarshalBinary(r io.Reader, v BinaryUnmarshaler) error {
 type BinaryReader struct {
 	in     io.Reader
 	offset int64
+
+	// scratch backs the fixed-size decodings so that they do not escape to the
+	// heap on every read. Its contents never outlive a single method call, and
+	// are never handed to a caller.
+	scratch [8]byte
 }
 
 // NewBinaryReader returns a BinaryReader that reads from r.
@@ -229,13 +235,12 @@ var (
 
 // ReadBool reads a boolean value from the reader. It returns true if the byte is non-zero.
 func (r *BinaryReader) ReadBool() (bool, error) {
-	var buf [1]byte
-	n, err := io.ReadFull(r.in, buf[:])
+	n, err := io.ReadFull(r.in, r.scratch[:1])
 	r.offset += int64(n)
 	if err != nil {
 		return false, r.wrapErr(err)
 	}
-	return buf[0] != 0, nil
+	return r.scratch[0] != 0, nil
 }
 
 // ReadInt reads a 32-bit integer from the reader using variable-length zigzag encoding.
@@ -252,16 +257,15 @@ func (r *BinaryReader) ReadInt() (int32, error) {
 
 // ReadLong reads a 64-bit integer from the reader using variable-length zigzag encoding.
 func (r *BinaryReader) ReadLong() (int64, error) {
-	var buf [1]byte
 	var unsigned uint64
 	var shift uint
 	for i := 0; i < binary.MaxVarintLen64; i++ {
-		n, err := io.ReadFull(r.in, buf[:])
+		n, err := io.ReadFull(r.in, r.scratch[:1])
 		r.offset += int64(n)
 		if err != nil {
 			return 0, r.wrapErr(err)
 		}
-		b := buf[0]
+		b := r.scratch[0]
 		unsigned |= uint64(b&0x7f) << shift
 		if b&0x80 == 0 {
 			return int64(unsigned>>1) ^ -int64(unsigned&1), nil
@@ -273,24 +277,22 @@ func (r *BinaryReader) ReadLong() (int64, error) {
 
 // ReadFloat reads a 32-bit floating-point number from the reader in little-endian format.
 func (r *BinaryReader) ReadFloat() (float32, error) {
-	var buf [4]byte
-	n, err := io.ReadFull(r.in, buf[:])
+	n, err := io.ReadFull(r.in, r.scratch[:4])
 	r.offset += int64(n)
 	if err != nil {
 		return 0, r.wrapErr(err)
 	}
-	return math.Float32frombits(binary.LittleEndian.Uint32(buf[:])), nil
+	return math.Float32frombits(binary.LittleEndian.Uint32(r.scratch[:4])), nil
 }
 
 // ReadDouble reads a 64-bit floating-point number from the reader in little-endian format.
 func (r *BinaryReader) ReadDouble() (float64, error) {
-	var buf [8]byte
-	n, err := io.ReadFull(r.in, buf[:])
+	n, err := io.ReadFull(r.in, r.scratch[:8])
 	r.offset += int64(n)
 	if err != nil {
 		return 0, r.wrapErr(err)
 	}
-	return math.Float64frombits(binary.LittleEndian.Uint64(buf[:])), nil
+	return math.Float64frombits(binary.LittleEndian.Uint64(r.scratch[:8])), nil
 }
 
 // ReadBytes reads a byte array from the reader. It first reads the length as a long, followed by the bytes.
@@ -326,6 +328,19 @@ func (r *BinaryReader) ReadFixed(size int) ([]byte, error) {
 		return nil, r.wrapErr(err)
 	}
 	return buf, nil
+}
+
+// discard advances the reader past n bytes without retaining them.
+func (r *BinaryReader) discard(n int64) error {
+	nr, err := io.CopyN(io.Discard, r.in, n)
+	r.offset += nr
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			err = io.ErrUnexpectedEOF
+		}
+		return r.wrapErr(err)
+	}
+	return nil
 }
 
 // ReadString reads a string from the reader. It first reads the length as a long, followed by the UTF-8 bytes of the string.

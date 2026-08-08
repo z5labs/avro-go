@@ -61,6 +61,57 @@ err := avro.UnmarshalBinary(bytes.NewReader(data), &msg)
 
 `BinaryReader` mirrors `BinaryWriter` with corresponding `Read*` methods.
 
+### Streaming Arrays
+
+An Avro `array` is encoded as a series of blocks — a `long` item count followed by that many items, terminated by a zero count — so an array whose encoding is far larger than memory can be read and written an item at a time. `ArrayReader` and `ArrayWriter` own that block framing; neither holds more than a single item.
+
+`ArrayReader.Next` decodes into a destination you supply, so reusing one value across the whole array or keeping every item is your choice:
+
+```go
+r := avro.NewArrayReader(avro.NewBinaryReader(in))
+
+var msg Message
+for {
+    ok, err := r.Next(&msg)
+    if err != nil {
+        return err
+    }
+    if !ok {
+        break
+    }
+    // use msg before the next call overwrites it
+}
+```
+
+`WriteArray` writes items incrementally and terminates the array for you:
+
+```go
+err := avro.WriteArray(avro.NewBinaryWriter(out), func(w *avro.ArrayWriter) error {
+    for _, msg := range messages {
+        if err := w.Write(msg); err != nil {
+            return err
+        }
+    }
+    return nil
+})
+```
+
+Use `NewArrayWriter` directly when the array outlives a single function, but note that an array is only complete once its terminating block is written: an `ArrayWriter` that is never `Close`d produces a truncated array, which `ArrayReader` reports as `ErrTruncatedArray` rather than a short read.
+
+By default each item is written straight through as its own block, buffering nothing. `WithSizedBlocks(n)` instead batches items into blocks that record their encoded size, bounding the buffer at `n` bytes plus one item:
+
+```go
+w := avro.NewArrayWriter(avro.NewBinaryWriter(out), avro.WithSizedBlocks(64<<10))
+```
+
+A sized block can be discarded without decoding any of its items, which is what `ArrayReader.SkipBlock` is for. Because emitting sizes is optional for a writer, `SkipBlock` reports which path it took:
+
+| Result | Meaning |
+|--------|---------|
+| `SkipSized` | The block declared its size and was discarded straight from the reader; no item was decoded |
+| `SkipUnsized` | The block declared no size, so nothing was consumed — drain it with `Next` instead |
+| `SkipNone` | The array's terminating block has been reached |
+
 ### Single-Object Encoding
 
 The [Avro single-object encoding](https://avro.apache.org/docs/current/specification/#single-object-encoding) prepends a 2-byte magic header and an 8-byte schema fingerprint to the binary payload, allowing readers to identify the schema at runtime.
