@@ -61,6 +61,28 @@ err := avro.UnmarshalBinary(bytes.NewReader(data), &msg)
 
 `BinaryReader` mirrors `BinaryWriter` with corresponding `Read*` methods.
 
+### Decoding from a `[]byte`
+
+When the encoded record is already in memory, read it straight from the slice. `NewBytesReader` returns a `BinaryReader` in bytes mode, which decodes without an `io.Reader` and without copying: `ReadBytes` and `ReadFixed` return slices of the input (their capacity equals their length), so they are valid only as long as the input is. `ReadString` still copies.
+
+```go
+err := avro.UnmarshalBytes(data, &msg)
+```
+
+`UnmarshalBytes` allocates its reader on every call. To decode with no allocations at all, apart from strings, keep one reader and reset it for each record:
+
+```go
+r := avro.NewBytesReader(nil)
+for _, data := range records {
+    r.ResetBytes(data)
+    if err := msg.UnmarshalAvroBinary(r); err != nil {
+        return err
+    }
+}
+```
+
+In bytes mode a read that fails consumes nothing, so `Offset()` and `Remaining()` stay at the start of the value that failed, which is also the `Offset` its `*BinaryReaderError` reports. `Offset()` counts from the last `NewBytesReader` or `ResetBytes`.
+
 ### Streaming Arrays
 
 An Avro `array` is encoded as a series of blocks — a `long` item count followed by that many items, terminated by a zero count — so an array whose encoding is far larger than memory can be read and written an item at a time. `ArrayReader` and `ArrayWriter` own that block framing; neither holds more than a single item.
