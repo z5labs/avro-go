@@ -6,7 +6,6 @@
 package avro
 
 import (
-	"bytes"
 	"errors"
 	"io"
 	"math"
@@ -264,8 +263,7 @@ func WithSizedBlocks(bufferSize int) ArrayWriterOption {
 type ArrayWriter struct {
 	w *BinaryWriter
 
-	buf   *bytes.Buffer // pending block; nil when blocks are unsized
-	bufw  *BinaryWriter // writes into buf
+	block *BinaryWriter // pending block, in append mode; nil when blocks are unsized
 	limit int           // buffered byte count at which the block is flushed
 
 	count  int64 // items buffered in the pending block
@@ -286,8 +284,7 @@ func NewArrayWriter(w *BinaryWriter, opts ...ArrayWriterOption) *ArrayWriter {
 			o.bufferSize = DefaultBlockBufferSize
 		}
 		a.limit = o.bufferSize
-		a.buf = bytes.NewBuffer(make([]byte, 0, o.bufferSize))
-		a.bufw = NewBinaryWriter(a.buf)
+		a.block = NewAppendWriter(make([]byte, 0, o.bufferSize))
 	}
 	return a
 }
@@ -305,7 +302,7 @@ func (a *ArrayWriter) Write(v BinaryMarshaler) error {
 		return ErrArrayWriterClosed
 	}
 
-	if a.buf == nil {
+	if a.block == nil {
 		if err := a.w.WriteLong(1); err != nil {
 			return a.fail(err)
 		}
@@ -315,11 +312,11 @@ func (a *ArrayWriter) Write(v BinaryMarshaler) error {
 		return nil
 	}
 
-	if err := v.MarshalAvroBinary(a.bufw); err != nil {
+	if err := v.MarshalAvroBinary(a.block); err != nil {
 		return a.fail(err)
 	}
 	a.count++
-	if a.buf.Len() >= a.limit {
+	if a.block.Offset() >= int64(a.limit) {
 		return a.flush()
 	}
 	return nil
@@ -334,7 +331,7 @@ func (a *ArrayWriter) Close() error {
 	if a.closed {
 		return nil
 	}
-	if a.buf != nil {
+	if a.block != nil {
 		if err := a.flush(); err != nil {
 			return err
 		}
@@ -354,14 +351,15 @@ func (a *ArrayWriter) flush() error {
 	if err := a.w.WriteLong(-a.count); err != nil {
 		return a.fail(err)
 	}
-	if err := a.w.WriteLong(int64(a.buf.Len())); err != nil {
+	block := a.block.Bytes()
+	if err := a.w.WriteLong(int64(len(block))); err != nil {
 		return a.fail(err)
 	}
-	if err := a.w.WriteFixed(a.buf.Bytes()); err != nil {
+	if err := a.w.WriteFixed(block); err != nil {
 		return a.fail(err)
 	}
 	a.count = 0
-	a.buf.Reset()
+	a.block.ResetAppend(block[:0])
 	return nil
 }
 
