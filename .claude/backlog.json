@@ -1,6 +1,6 @@
 {
   "select": { "label": "story", "milestone": null, "limit": 200 },
-  "dependencies": { "style": "none" },
+  "dependencies": { "style": "native" },
   "verify": ["golangci-lint run", "go build ./...", "go test -race -cover ./..."],
   "merge": { "label": "auto-merge", "workflow": "auto-merge.yaml" },
   "review": {
