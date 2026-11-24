@@ -184,10 +184,48 @@ func UnmarshalBinary(r io.Reader, v BinaryUnmarshaler) error {
 	return v.UnmarshalAvroBinary(&BinaryReader{in: r})
 }
 
-// BinaryReader provides methods to read Avro data types from an underlying io.Reader.
+// UnmarshalBytes reads Avro data from b, using a [BinaryReader] in bytes mode;
+// see [NewBytesReader]. Bytes left over after v has been read are ignored, as
+// [UnmarshalBinary] ignores the rest of its reader.
+//
+// UnmarshalBytes allocates the BinaryReader it hands to v on every call. To
+// decode without allocating, create one reader with [NewBytesReader] and call
+// [BinaryReader.ResetBytes] on it before each record instead.
+//
+// The []byte values v reads alias b, as they do for [NewBytesReader].
+func UnmarshalBytes(b []byte, v BinaryUnmarshaler) error {
+	return v.UnmarshalAvroBinary(NewBytesReader(b))
+}
+
+// BinaryReader provides methods to read Avro data types from an underlying
+// io.Reader, or straight from a []byte.
+//
+// A BinaryReader made by [NewBinaryReader] reads from an io.Reader. One made
+// by [NewBytesReader], or reset with [BinaryReader.ResetBytes], is in bytes
+// mode: it decodes from a []byte with the Consume functions, such as
+// [ConsumeLong], and never touches an io.Reader. In bytes mode:
+//
+//   - [BinaryReader.ReadBytes] and [BinaryReader.ReadFixed] return slices of
+//     the input rather than copies. Their capacity equals their length, so
+//     appending to one copies instead of overwriting the input, but they are
+//     valid only as long as the input is. [BinaryReader.ReadString] still
+//     copies.
+//   - A read that fails consumes nothing: [BinaryReader.Offset] and
+//     [BinaryReader.Remaining] stay at the start of the value that failed, and
+//     so does the Offset of the [*BinaryReaderError] it returns.
+//   - A read returns [io.EOF] if no input remains when it starts, and
+//     [io.ErrUnexpectedEOF] if the input ends partway through the value.
+//   - Every read except [BinaryReader.ReadString] makes no allocation on
+//     success, so a record decoded through one reused reader allocates
+//     nothing but its strings.
 type BinaryReader struct {
 	in     io.Reader
 	offset int64
+
+	// isBytes reports bytes mode, in which rest holds the input not yet
+	// consumed and in is unused.
+	isBytes bool
+	rest    []byte
 
 	// scratch backs the fixed-size decodings so that they do not escape to the
 	// heap on every read. Its contents never outlive a single method call, and
@@ -200,9 +238,50 @@ func NewBinaryReader(r io.Reader) *BinaryReader {
 	return &BinaryReader{in: r}
 }
 
-// Offset returns the number of bytes successfully consumed so far.
+// NewBytesReader returns a BinaryReader in bytes mode that reads from b; see
+// [BinaryReader] for how bytes mode differs. The reader does not copy b, and
+// the []byte values it returns alias it.
+func NewBytesReader(b []byte) *BinaryReader {
+	return &BinaryReader{isBytes: true, rest: b}
+}
+
+// ResetBytes puts r in bytes mode reading from b, discarding whatever r was
+// reading before, and resets [BinaryReader.Offset] to zero. Reusing one
+// reader across records with ResetBytes is what makes decoding them
+// allocation free.
+func (r *BinaryReader) ResetBytes(b []byte) {
+	*r = BinaryReader{isBytes: true, rest: b}
+}
+
+// Offset returns the number of bytes successfully consumed so far. In bytes
+// mode it counts from the last call to [NewBytesReader] or
+// [BinaryReader.ResetBytes], so that Offset equals the input's length minus
+// the length of [BinaryReader.Remaining].
 func (r *BinaryReader) Offset() int64 {
 	return r.offset
+}
+
+// Remaining returns the input a bytes-mode reader has not yet consumed. The
+// result aliases the input. It returns nil when r reads from an io.Reader.
+func (r *BinaryReader) Remaining() []byte {
+	if !r.isBytes {
+		return nil
+	}
+	return r.rest
+}
+
+// consumed advances a bytes-mode reader past the n bytes a Consume function
+// reported, or returns the error it reported. On error nothing is consumed.
+func (r *BinaryReader) consumed(n int) error {
+	if n < 0 {
+		if len(r.rest) == 0 {
+			return r.wrapErr(io.EOF)
+		}
+		return r.wrapErr(ConsumeError(n))
+	}
+	r.rest = r.rest[n:]
+	r.offset += int64(n)
+	return nil
 }
 
 // BinaryReaderError is returned when a BinaryReader operation fails. It reports
@@ -235,6 +314,10 @@ var (
 
 // ReadBool reads a boolean value from the reader. It returns true if the byte is non-zero.
 func (r *BinaryReader) ReadBool() (bool, error) {
+	if r.isBytes {
+		v, n := ConsumeBool(r.rest)
+		return v, r.consumed(n)
+	}
 	n, err := io.ReadFull(r.in, r.scratch[:1])
 	r.offset += int64(n)
 	if err != nil {
@@ -248,7 +331,11 @@ func (r *BinaryReader) ReadBool() (bool, error) {
 // It follows the same overflow and end-of-input rules as [BinaryReader.ReadLong],
 // and also returns [ErrOverflow] when the decoded value does not fit in 32 bits.
 func (r *BinaryReader) ReadInt() (int32, error) {
-	l, err := r.ReadLong()
+	if r.isBytes {
+		v, n := ConsumeInt(r.rest)
+		return v, r.consumed(n)
+	}
+	l, err := r.readLong()
 	if err != nil {
 		return 0, err
 	}
@@ -264,6 +351,16 @@ func (r *BinaryReader) ReadInt() (int32, error) {
 // in 64 bits. It returns [io.EOF] only when no byte of the value could be
 // read, and [io.ErrUnexpectedEOF] when the input ends partway through it.
 func (r *BinaryReader) ReadLong() (int64, error) {
+	if r.isBytes {
+		v, n := ConsumeLong(r.rest)
+		return v, r.consumed(n)
+	}
+	return r.readLong()
+}
+
+// readLong is [BinaryReader.ReadLong] from an io.Reader. The other methods
+// that begin with a long call it directly, so that they check the mode once.
+func (r *BinaryReader) readLong() (int64, error) {
 	var unsigned uint64
 	var shift uint
 	for i := 0; i < binary.MaxVarintLen64; i++ {
@@ -297,9 +394,14 @@ func (r *BinaryReader) ReadLong() (int64, error) {
 // It follows the same overflow and end-of-input rules as [BinaryReader.ReadLong].
 // When the index is negative or not less than count, it returns a
 // [*BinaryReaderError] wrapping [ErrInvalidIndex], whose Offset is just past
-// the index. It is the [BinaryReader] counterpart of [ConsumeIndex].
+// the index; in bytes mode the index is not consumed, and the Offset is its
+// start. It is the [BinaryReader] counterpart of [ConsumeIndex].
 func (r *BinaryReader) ReadIndex(count int) (int, error) {
-	v, err := r.ReadLong()
+	if r.isBytes {
+		v, n := ConsumeIndex(r.rest, count)
+		return v, r.consumed(n)
+	}
+	v, err := r.readLong()
 	if err != nil {
 		return 0, err
 	}
@@ -311,6 +413,10 @@ func (r *BinaryReader) ReadIndex(count int) (int, error) {
 
 // ReadFloat reads a 32-bit floating-point number from the reader in little-endian format.
 func (r *BinaryReader) ReadFloat() (float32, error) {
+	if r.isBytes {
+		v, n := ConsumeFloat(r.rest)
+		return v, r.consumed(n)
+	}
 	n, err := io.ReadFull(r.in, r.scratch[:4])
 	r.offset += int64(n)
 	if err != nil {
@@ -321,6 +427,10 @@ func (r *BinaryReader) ReadFloat() (float32, error) {
 
 // ReadDouble reads a 64-bit floating-point number from the reader in little-endian format.
 func (r *BinaryReader) ReadDouble() (float64, error) {
+	if r.isBytes {
+		v, n := ConsumeDouble(r.rest)
+		return v, r.consumed(n)
+	}
 	n, err := io.ReadFull(r.in, r.scratch[:8])
 	r.offset += int64(n)
 	if err != nil {
@@ -333,8 +443,16 @@ func (r *BinaryReader) ReadDouble() (float64, error) {
 //
 // It returns [io.EOF] only when no byte of the length prefix could be read,
 // and [io.ErrUnexpectedEOF] when the input ends after that.
+//
+// In bytes mode the result is a slice of the input, not a copy; see
+// [BinaryReader]. An empty value is a non-nil, zero-length slice in either
+// mode.
 func (r *BinaryReader) ReadBytes() ([]byte, error) {
-	n, err := r.ReadLong()
+	if r.isBytes {
+		v, n := ConsumeBytes(r.rest)
+		return v, r.consumed(n)
+	}
+	n, err := r.readLong()
 	if err != nil {
 		return nil, err
 	}
@@ -362,7 +480,20 @@ func (r *BinaryReader) ReadBytes() ([]byte, error) {
 }
 
 // ReadFixed reads exactly size bytes from the reader. Unlike ReadBytes, it does not read a length prefix.
+//
+// In bytes mode the result is a slice of the input, not a copy; see
+// [BinaryReader]. A size of 0 succeeds without consuming anything in either
+// mode, even when no input remains. ReadFixed panics if size is negative.
 func (r *BinaryReader) ReadFixed(size int) ([]byte, error) {
+	if r.isBytes {
+		v, n := ConsumeFixed(r.rest, size)
+		if v == nil && n == 0 {
+			// A size of 0 from nil input. Return a non-nil empty slice, as
+			// an io.Reader-mode read does.
+			v = []byte{}
+		}
+		return v, r.consumed(n)
+	}
 	buf := make([]byte, size)
 	n, err := io.ReadFull(r.in, buf)
 	r.offset += int64(n)
@@ -374,6 +505,15 @@ func (r *BinaryReader) ReadFixed(size int) ([]byte, error) {
 
 // discard advances the reader past n bytes without retaining them.
 func (r *BinaryReader) discard(n int64) error {
+	if r.isBytes {
+		if n > int64(len(r.rest)) {
+			// The bytes being discarded belong to a value that has already
+			// begun, so running out of them is a short read.
+			return r.wrapErr(io.ErrUnexpectedEOF)
+		}
+		_, c := ConsumeFixed(r.rest, int(n))
+		return r.consumed(c)
+	}
 	nr, err := io.CopyN(io.Discard, r.in, n)
 	r.offset += nr
 	if err != nil {
@@ -387,7 +527,8 @@ func (r *BinaryReader) discard(n int64) error {
 
 // ReadString reads a string from the reader. It first reads the length as a long, followed by the UTF-8 bytes of the string.
 //
-// It follows the same end-of-input rules as [BinaryReader.ReadBytes].
+// It follows the same end-of-input rules as [BinaryReader.ReadBytes]. It
+// copies the bytes into a new string in bytes mode too.
 func (r *BinaryReader) ReadString() (string, error) {
 	b, err := r.ReadBytes()
 	if err != nil {

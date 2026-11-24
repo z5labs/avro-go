@@ -53,3 +53,43 @@ func ExampleUnmarshalBinary() {
 
 	// Output: abc
 }
+
+func ExampleUnmarshalBytes() {
+	data := []byte{0x06, 0x61, 0x62, 0x63}
+
+	var msg message
+	err := UnmarshalBytes(data, &msg)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	fmt.Println(msg.content)
+
+	// Output: abc
+}
+
+func ExampleBinaryReader_ResetBytes() {
+	records := [][]byte{
+		{0x06, 0x61, 0x62, 0x63},
+		{0x04, 0x78, 0x79},
+	}
+
+	// One reader, reset before each record, decodes without allocating the
+	// reader again for every record.
+	r := NewBytesReader(nil)
+	for _, data := range records {
+		r.ResetBytes(data)
+
+		var msg message
+		if err := msg.UnmarshalAvroBinary(r); err != nil {
+			fmt.Println(err)
+			return
+		}
+		fmt.Println(msg.content, len(r.Remaining()))
+	}
+
+	// Output:
+	// abc 0
+	// xy 0
+}
