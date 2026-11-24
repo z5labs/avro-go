@@ -567,16 +567,17 @@ func TestConsumeFixed_size(t *testing.T) {
 		got, n := ConsumeFixed([]byte{0x01}, 0)
 
 		require.Equal(t, 0, n)
+		require.NotNil(t, got)
 		require.Empty(t, got)
 	})
 
-	t.Run("zero size of empty input succeeds", func(t *testing.T) {
+	t.Run("zero size of nil input is nil", func(t *testing.T) {
 		t.Parallel()
 
 		got, n := ConsumeFixed(nil, 0)
 
 		require.Equal(t, 0, n)
-		require.Empty(t, got)
+		require.Nil(t, got)
 	})
 
 	t.Run("negative size panics", func(t *testing.T) {
@@ -650,6 +651,7 @@ func TestBytesAllocations(t *testing.T) {
 	// this test binary is allocating at the same time.
 
 	long := AppendLong(nil, math.MinInt64)
+	index := AppendIndex(nil, 200)
 	payload := AppendBytes(nil, bytes.Repeat([]byte{0xab}, 64))
 	double := AppendDouble(nil, math.Pi)
 	value := bytes.Repeat([]byte{0xcd}, 64)
@@ -660,9 +662,11 @@ func TestBytesAllocations(t *testing.T) {
 		f    func()
 	}{
 		{name: "ConsumeLong", f: func() { bytesSinkLong, bytesSinkN = ConsumeLong(long) }},
-		{name: "ConsumeInt", f: func() { bytesSinkInt, bytesSinkN = ConsumeInt(long[:5]) }},
+		{name: "ConsumeInt", f: func() { bytesSinkInt, bytesSinkN = ConsumeInt(index) }},
+		{name: "ConsumeInt overflowing", f: func() { bytesSinkInt, bytesSinkN = ConsumeInt(long) }},
 		{name: "ConsumeLength", f: func() { bytesSinkN, bytesSinkN = ConsumeLength(payload) }},
-		{name: "ConsumeIndex", f: func() { bytesSinkN, bytesSinkN = ConsumeIndex(long, 1) }},
+		{name: "ConsumeIndex", f: func() { bytesSinkN, bytesSinkN = ConsumeIndex(index, 201) }},
+		{name: "ConsumeIndex out of range", f: func() { bytesSinkN, bytesSinkN = ConsumeIndex(long, 1) }},
 		{name: "ConsumeBytes", f: func() { bytesSinkBytes, bytesSinkN = ConsumeBytes(payload) }},
 		{name: "ConsumeFixed", f: func() { bytesSinkBytes, bytesSinkN = ConsumeFixed(payload, 16) }},
 		{name: "ConsumeBool", f: func() { bytesSinkBool, bytesSinkN = ConsumeBool(long) }},
@@ -691,6 +695,12 @@ func TestBytesAllocations(t *testing.T) {
 			require.Zero(t, testing.AllocsPerRun(100, tc.f))
 		})
 	}
+
+	// The success paths above must actually succeed, or they measure nothing.
+	_, n := ConsumeInt(index)
+	require.Equal(t, len(index), n)
+	_, n = ConsumeIndex(index, 201)
+	require.Equal(t, len(index), n)
 }
 
 func BenchmarkConsumeLong(b *testing.B) {
@@ -751,5 +761,62 @@ func BenchmarkSizeLong(b *testing.B) {
 				bytesSinkN = SizeLong(v)
 			}
 		})
+	}
+}
+
+// The remaining Append benchmarks call each function directly in the loop,
+// rather than through a closure, so that they measure it inlined.
+func BenchmarkAppendInt(b *testing.B) {
+	dst := make([]byte, 0, 16)
+	for b.Loop() {
+		bytesSinkBytes = AppendInt(dst[:0], math.MinInt32)
+	}
+}
+
+func BenchmarkAppendIndex(b *testing.B) {
+	dst := make([]byte, 0, 16)
+	for b.Loop() {
+		bytesSinkBytes = AppendIndex(dst[:0], 200)
+	}
+}
+
+func BenchmarkAppendBool(b *testing.B) {
+	dst := make([]byte, 0, 16)
+	for b.Loop() {
+		bytesSinkBytes = AppendBool(dst[:0], true)
+	}
+}
+
+func BenchmarkAppendFloat(b *testing.B) {
+	dst := make([]byte, 0, 16)
+	for b.Loop() {
+		bytesSinkBytes = AppendFloat(dst[:0], math.E)
+	}
+}
+
+func BenchmarkAppendString(b *testing.B) {
+	dst := make([]byte, 0, 128)
+	for b.Loop() {
+		bytesSinkBytes = AppendString(dst[:0], "hello, avro")
+	}
+}
+
+func BenchmarkAppendFixed(b *testing.B) {
+	dst := make([]byte, 0, 128)
+	value := bytes.Repeat([]byte{0xab}, 16)
+	for b.Loop() {
+		bytesSinkBytes = AppendFixed(dst[:0], value)
+	}
+}
+
+func BenchmarkSizeIndex(b *testing.B) {
+	for b.Loop() {
+		bytesSinkN = SizeIndex(200)
+	}
+}
+
+func BenchmarkSizeBytes(b *testing.B) {
+	for b.Loop() {
+		bytesSinkN = SizeBytes(64)
 	}
 }

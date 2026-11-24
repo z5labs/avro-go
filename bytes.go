@@ -13,21 +13,6 @@ import (
 	"math/bits"
 )
 
-// This file holds the []byte counterparts of [BinaryReader] and
-// [BinaryWriter]: free functions that decode Avro primitives from the front of
-// a byte slice and append their encodings to one, with no io.Reader or
-// io.Writer, no interface calls and no allocation.
-//
-// The Consume functions share one result convention. A count n >= 0 is
-// success, and is the number of bytes of b the value occupied. A negative n is
-// an error code, which only [ConsumeError] interprets. When n < 0 the decoded
-// value is the zero value.
-//
-// The bytes and fixed results of [ConsumeBytes] and [ConsumeFixed] alias b
-// rather than copying it. Their capacity equals their length, so appending to
-// one copies instead of overwriting the rest of b. They are valid only as long
-// as b is: reusing or overwriting b's backing array changes them.
-
 // ErrInvalidIndex is returned when a decoded enum symbol or union branch index
 // is negative or not less than the number of symbols or branches.
 var ErrInvalidIndex = errors.New("avro: enum or union index out of range")
@@ -42,10 +27,26 @@ const (
 
 // ConsumeError returns the error a Consume function reported with n.
 //
-// It returns nil when n >= 0. Otherwise it returns [io.ErrUnexpectedEOF],
-// [ErrOverflow], [ErrNegativeLength] or [ErrInvalidIndex]. Input that ends
-// before the value does, including empty input, is [io.ErrUnexpectedEOF]. The
-// errors are the package's sentinels, so ConsumeError never allocates.
+// The Consume functions decode Avro primitives from the front of a byte slice
+// b, the []byte counterparts of the [BinaryReader] methods, and the Append
+// functions are the counterparts of the [BinaryWriter] methods. Neither uses
+// an io.Reader or io.Writer, and neither allocates.
+//
+// Every Consume function returns a count n. A count n >= 0 is success, and is
+// the number of bytes of b the value occupied. A negative n is an error code,
+// which only ConsumeError interprets, and the value returned beside it is the
+// zero value.
+//
+// The results of [ConsumeBytes] and [ConsumeFixed] alias b rather than
+// copying it. Their capacity equals their length, so appending to one copies
+// instead of overwriting the rest of b. They are valid only as long as b is:
+// reusing, overwriting or moving b's backing array invalidates them.
+//
+// ConsumeError returns nil when n >= 0. Otherwise it returns
+// [io.ErrUnexpectedEOF], [ErrOverflow], [ErrNegativeLength] or
+// [ErrInvalidIndex]. Input that ends before the value does, including empty
+// input, is [io.ErrUnexpectedEOF]. The errors are the package's sentinels, so
+// ConsumeError never allocates.
 //
 // A negative n that no Consume function returns is reported as
 // [io.ErrUnexpectedEOF].
@@ -70,7 +71,7 @@ func ConsumeError(n int) error {
 // value that does not fit in 64 bits and a varint that continues past 10
 // bytes. Overlong encodings, such as 0x80 0x00 for 0, are accepted, as
 // [BinaryReader.ReadLong] accepts them. See [ConsumeError] for the meaning of
-// n.
+// n and the errors it reports.
 func ConsumeLong(b []byte) (v int64, n int) {
 	var u uint64
 	var shift uint
@@ -93,6 +94,7 @@ func ConsumeLong(b []byte) (v int64, n int) {
 //
 // It follows the same rules as [ConsumeLong], and also reports [ErrOverflow]
 // when the value does not fit in 32 bits, as [BinaryReader.ReadInt] does.
+// See [ConsumeError] for the meaning of n.
 func ConsumeInt(b []byte) (v int32, n int) {
 	l, n := ConsumeLong(b)
 	if n < 0 {
@@ -108,7 +110,8 @@ func ConsumeInt(b []byte) (v int32, n int) {
 // from the front of b. It consumes the prefix only, not the payload.
 //
 // It reports [ErrNegativeLength] for a negative length and [ErrOverflow] for
-// a length above [math.MaxInt32], as [BinaryReader.ReadBytes] does.
+// a length above [math.MaxInt32], as [BinaryReader.ReadBytes] does. See
+// [ConsumeError] for the meaning of n.
 func ConsumeLength(b []byte) (l int, n int) {
 	v, n := ConsumeLong(b)
 	if n < 0 {
@@ -127,7 +130,7 @@ func ConsumeLength(b []byte) (l int, n int) {
 // b, where count is the number of symbols or branches.
 //
 // It reports [ErrInvalidIndex] when the index is negative or not less than
-// count.
+// count. See [ConsumeError] for the meaning of n.
 func ConsumeIndex(b []byte, count int) (i int, n int) {
 	v, n := ConsumeLong(b)
 	if n < 0 {
@@ -142,9 +145,10 @@ func ConsumeIndex(b []byte, count int) (i int, n int) {
 // ConsumeBytes decodes a length prefixed bytes value from the front of b. It
 // decodes a string the same way.
 //
-// The result aliases b and its capacity equals its length; reusing or
-// overwriting b invalidates it. An empty value is a non-nil, zero-length
-// slice. The length prefix follows the rules of [ConsumeLength].
+// The result aliases b and its capacity equals its length; reusing,
+// overwriting or moving b invalidates it. An empty value is a non-nil,
+// zero-length slice. The length prefix follows the rules of [ConsumeLength].
+// See [ConsumeError] for the meaning of n.
 func ConsumeBytes(b []byte) (v []byte, n int) {
 	l, n := ConsumeLength(b)
 	if n < 0 {
@@ -158,9 +162,11 @@ func ConsumeBytes(b []byte) (v []byte, n int) {
 
 // ConsumeFixed decodes a fixed value of size bytes from the front of b.
 //
-// The result aliases b and its capacity equals its length; reusing or
-// overwriting b invalidates it. A size of 0 succeeds with n == 0.
-// ConsumeFixed panics if size is negative.
+// The result aliases b and its capacity equals its length; reusing,
+// overwriting or moving b invalidates it. A size of 0 succeeds with n == 0,
+// and returns a zero-length slice of b, which is nil when b is nil.
+// ConsumeFixed panics if size is negative. See [ConsumeError] for the meaning
+// of n.
 func ConsumeFixed(b []byte, size int) (v []byte, n int) {
 	if size < 0 {
 		panic("avro: ConsumeFixed: negative size")
@@ -172,7 +178,8 @@ func ConsumeFixed(b []byte, size int) (v []byte, n int) {
 }
 
 // ConsumeBool decodes a boolean from the front of b. Any non-zero byte is
-// true, as it is for [BinaryReader.ReadBool].
+// true, as it is for [BinaryReader.ReadBool]. See [ConsumeError] for the
+// meaning of n.
 func ConsumeBool(b []byte) (v bool, n int) {
 	if len(b) < 1 {
 		return false, errCodeTruncated
@@ -180,7 +187,8 @@ func ConsumeBool(b []byte) (v bool, n int) {
 	return b[0] != 0, 1
 }
 
-// ConsumeFloat decodes a little-endian 32-bit float from the front of b.
+// ConsumeFloat decodes a little-endian 32-bit float from the front of b. See
+// [ConsumeError] for the meaning of n.
 func ConsumeFloat(b []byte) (v float32, n int) {
 	if len(b) < 4 {
 		return 0, errCodeTruncated
@@ -188,7 +196,8 @@ func ConsumeFloat(b []byte) (v float32, n int) {
 	return math.Float32frombits(binary.LittleEndian.Uint32(b)), 4
 }
 
-// ConsumeDouble decodes a little-endian 64-bit float from the front of b.
+// ConsumeDouble decodes a little-endian 64-bit float from the front of b. See
+// [ConsumeError] for the meaning of n.
 func ConsumeDouble(b []byte) (v float64, n int) {
 	if len(b) < 8 {
 		return 0, errCodeTruncated
