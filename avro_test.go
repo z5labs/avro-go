@@ -1262,6 +1262,15 @@ func TestBinaryReader_truncated(t *testing.T) {
 	require.NoError(t, NewBinaryWriter(&longBytes).WriteBytes(payload))
 	require.Equal(t, 2+len(payload), longBytes.Len())
 
+	readLong := func(r *BinaryReader) error {
+		_, err := r.ReadLong()
+		return err
+	}
+	readBytes := func(r *BinaryReader) error {
+		_, err := r.ReadBytes()
+		return err
+	}
+
 	reads := []struct {
 		name string
 		data []byte
@@ -1270,10 +1279,7 @@ func TestBinaryReader_truncated(t *testing.T) {
 		{
 			name: "ReadLong",
 			data: maxLong,
-			read: func(r *BinaryReader) error {
-				_, err := r.ReadLong()
-				return err
-			},
+			read: readLong,
 		},
 		{
 			name: "ReadInt",
@@ -1294,10 +1300,7 @@ func TestBinaryReader_truncated(t *testing.T) {
 		{
 			name: "ReadBytes",
 			data: longBytes.Bytes(),
-			read: func(r *BinaryReader) error {
-				_, err := r.ReadBytes()
-				return err
-			},
+			read: readBytes,
 		},
 		{
 			name: "ReadString",
@@ -1332,14 +1335,14 @@ func TestBinaryReader_truncated(t *testing.T) {
 		testCase{
 			name:           "ReadLong continuation byte with nothing after it",
 			input:          []byte{0x80},
-			read:           reads[0].read,
+			read:           readLong,
 			expectedErr:    io.ErrUnexpectedEOF,
 			expectedOffset: 1,
 		},
 		testCase{
 			name:           "ReadBytes length prefix with no payload",
 			input:          []byte{0x04},
-			read:           reads[3].read,
+			read:           readBytes,
 			expectedErr:    io.ErrUnexpectedEOF,
 			expectedOffset: 1,
 		},

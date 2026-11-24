@@ -294,9 +294,10 @@ func (r *BinaryReader) ReadLong() (int64, error) {
 // ReadIndex reads an enum symbol or union branch index from the reader, where
 // count is the number of symbols or branches. The index is encoded as a long.
 //
-// It follows the same overflow and end-of-input rules as [BinaryReader.ReadLong],
-// and also returns [ErrInvalidIndex] when the index is negative or not less
-// than count. It is the [BinaryReader] counterpart of [ConsumeIndex].
+// It follows the same overflow and end-of-input rules as [BinaryReader.ReadLong].
+// When the index is negative or not less than count, it returns a
+// [*BinaryReaderError] wrapping [ErrInvalidIndex], whose Offset is just past
+// the index. It is the [BinaryReader] counterpart of [ConsumeIndex].
 func (r *BinaryReader) ReadIndex(count int) (int, error) {
 	v, err := r.ReadLong()
 	if err != nil {
