@@ -80,6 +80,8 @@ Format: `{type}({scope}): {description}`
 
 Feature branches: `story/issue-XX/description`
 
+Exception: the backlog loop (`backlog:next-issue` / `backlog:run-backlog` from z5labs/devex's backlog plugin) names its branches `issue-<n>`. That name is fixed by the plugin, so those branches are expected and are not drift from the convention above.
+
 ## Testing Style
 
 Tests use table-driven patterns with parallel execution:
