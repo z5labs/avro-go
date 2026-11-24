@@ -44,6 +44,35 @@ err := avro.MarshalBinary(&buf, Message{Content: "hello"})
 | `WriteFixed([]byte)` | fixed |
 | `WriteString(string)` | string |
 
+### Encoding into a `[]byte`
+
+To encode into a buffer you manage, put the `BinaryWriter` in append mode. `NewAppendWriter` returns a writer that appends to a `[]byte` with the `Append*` functions instead of writing to an `io.Writer`, so existing `MarshalAvroBinary` methods encode without interface calls. It writes exactly the bytes an `io.Writer`-mode writer would, and its write methods never return an error.
+
+```go
+w := avro.NewAppendWriter(nil)
+if err := msg.MarshalAvroBinary(w); err != nil {
+    return err
+}
+data := w.Bytes()
+```
+
+Like `append`, the writer writes into `dst`'s backing array while it has room and grows a new one when it does not, so a write makes no allocation when `dst` has room. Keep one writer and reset it onto the same buffer for each record:
+
+```go
+buf := make([]byte, 0, 1024)
+w := avro.NewAppendWriter(nil)
+for _, msg := range msgs {
+    w.ResetAppend(buf[:0])
+    if err := msg.MarshalAvroBinary(w); err != nil {
+        return err
+    }
+    buf = w.Bytes()
+    send(buf)
+}
+```
+
+`Bytes()` returns `dst` with everything written since the last `NewAppendWriter` or `ResetAppend` appended; it returns nil for a writer in `io.Writer` mode. `Offset()` counts from `len(dst)` at that point, so `len(Bytes())` is the absolute position. `ArrayWriter` works on an append-mode writer with unsized and sized blocks alike.
+
 ### Unmarshaling
 
 Implement `BinaryUnmarshaler` on your type and call `UnmarshalBinary` to decode it:

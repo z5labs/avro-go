@@ -23,10 +23,30 @@ func MarshalBinary(w io.Writer, v BinaryMarshaler) error {
 	return v.MarshalAvroBinary(&BinaryWriter{out: w})
 }
 
-// BinaryWriter provides methods to write Avro data types to an underlying io.Writer.
+// BinaryWriter provides methods to write Avro data types to an underlying
+// io.Writer, or by appending to a []byte.
+//
+// A BinaryWriter made by [NewBinaryWriter] writes to an io.Writer. One made by
+// [NewAppendWriter], or reset with [BinaryWriter.ResetAppend], is in append
+// mode: it encodes with the Append functions, such as [AppendLong], and never
+// touches an io.Writer. In append mode:
+//
+//   - A write produces exactly the bytes it writes to an io.Writer, appended
+//     to the buffer that [BinaryWriter.Bytes] returns.
+//   - A write never returns an error.
+//   - A write makes no allocation while the buffer has room for it, so a record
+//     encoded through one reused writer, reset onto a buffer large enough to
+//     hold it, allocates nothing.
 type BinaryWriter struct {
 	out    io.Writer
 	offset int64
+
+	// isAppend reports append mode, in which buf holds the dst the writer was
+	// last reset onto with everything written since appended, base is len(dst),
+	// and out and offset are unused.
+	isAppend bool
+	buf      []byte
+	base     int
 
 	// scratch backs the fixed-size encodings so that they do not escape to the
 	// heap on every write. Its contents never outlive a single method call.
@@ -38,9 +58,43 @@ func NewBinaryWriter(w io.Writer) *BinaryWriter {
 	return &BinaryWriter{out: w}
 }
 
-// Offset returns the number of bytes successfully written so far.
+// NewAppendWriter returns a BinaryWriter in append mode that appends to dst;
+// see [BinaryWriter] for how append mode differs. Like append, the writer
+// writes into dst's backing array while it has capacity, and grows a new one
+// when it does not; [BinaryWriter.Bytes] returns the result.
+func NewAppendWriter(dst []byte) *BinaryWriter {
+	return &BinaryWriter{isAppend: true, buf: dst, base: len(dst)}
+}
+
+// ResetAppend puts w in append mode appending to dst, discarding whatever w
+// was writing to before, and resets [BinaryWriter.Offset] to zero. Reusing one
+// writer across records with ResetAppend, passing back the buffer of the last
+// record truncated to length zero, is what lets a record encode with no
+// allocations.
+func (w *BinaryWriter) ResetAppend(dst []byte) {
+	*w = BinaryWriter{isAppend: true, buf: dst, base: len(dst)}
+}
+
+// Offset returns the number of bytes successfully written so far. In append
+// mode it counts from len(dst) at the last call to [NewAppendWriter] or
+// [BinaryWriter.ResetAppend], so that len([BinaryWriter.Bytes]) is the
+// absolute position, and Offset the number of bytes appended since.
 func (w *BinaryWriter) Offset() int64 {
+	if w.isAppend {
+		return int64(len(w.buf) - w.base)
+	}
 	return w.offset
+}
+
+// Bytes returns the dst an append-mode writer was last reset onto, with
+// everything written since appended. Its backing array is dst's when dst had
+// room, and a newly allocated one otherwise. It returns nil when w writes to
+// an io.Writer.
+func (w *BinaryWriter) Bytes() []byte {
+	if !w.isAppend {
+		return nil
+	}
+	return w.buf
 }
 
 // BinaryWriterError is returned when a BinaryWriter operation fails. Offset is
@@ -67,6 +121,10 @@ func (w *BinaryWriter) wrapErr(err error, bytesWritten int) error {
 
 // WriteBool writes a boolean value to the writer. It writes 1 for true and 0 for false.
 func (w *BinaryWriter) WriteBool(b bool) error {
+	if w.isAppend {
+		w.buf = AppendBool(w.buf, b)
+		return nil
+	}
 	w.scratch[0] = 0
 	if b {
 		w.scratch[0] = 1
@@ -84,11 +142,19 @@ func (w *BinaryWriter) WriteBool(b bool) error {
 
 // WriteInt writes a 32-bit integer to the writer using variable-length zigzag encoding.
 func (w *BinaryWriter) WriteInt(i int32) error {
+	if w.isAppend {
+		w.buf = AppendInt(w.buf, i)
+		return nil
+	}
 	return w.WriteLong(int64(i))
 }
 
 // WriteLong writes a 64-bit integer to the writer using variable-length zigzag encoding.
 func (w *BinaryWriter) WriteLong(l int64) error {
+	if w.isAppend {
+		w.buf = AppendLong(w.buf, l)
+		return nil
+	}
 	n := binary.PutVarint(w.scratch[:], l)
 	nw, err := w.out.Write(w.scratch[:n])
 	if err != nil {
@@ -103,6 +169,10 @@ func (w *BinaryWriter) WriteLong(l int64) error {
 
 // WriteFloat writes a 32-bit floating-point number to the writer in little-endian format.
 func (w *BinaryWriter) WriteFloat(f float32) error {
+	if w.isAppend {
+		w.buf = AppendFloat(w.buf, f)
+		return nil
+	}
 	binary.LittleEndian.PutUint32(w.scratch[:4], math.Float32bits(f))
 	nw, err := w.out.Write(w.scratch[:4])
 	if err != nil {
@@ -117,6 +187,10 @@ func (w *BinaryWriter) WriteFloat(f float32) error {
 
 // WriteDouble writes a 64-bit floating-point number to the writer in little-endian format.
 func (w *BinaryWriter) WriteDouble(d float64) error {
+	if w.isAppend {
+		w.buf = AppendDouble(w.buf, d)
+		return nil
+	}
 	binary.LittleEndian.PutUint64(w.scratch[:8], math.Float64bits(d))
 	nw, err := w.out.Write(w.scratch[:8])
 	if err != nil {
@@ -131,6 +205,10 @@ func (w *BinaryWriter) WriteDouble(d float64) error {
 
 // WriteBytes writes a byte array to the writer. It first writes the length of the array as a long, followed by the bytes.
 func (w *BinaryWriter) WriteBytes(b []byte) error {
+	if w.isAppend {
+		w.buf = AppendBytes(w.buf, b)
+		return nil
+	}
 	if err := w.WriteLong(int64(len(b))); err != nil {
 		return err
 	}
@@ -147,6 +225,10 @@ func (w *BinaryWriter) WriteBytes(b []byte) error {
 
 // WriteFixed writes a fixed number of bytes to the writer. Unlike WriteBytes, it does not write a length prefix.
 func (w *BinaryWriter) WriteFixed(b []byte) error {
+	if w.isAppend {
+		w.buf = AppendFixed(w.buf, b)
+		return nil
+	}
 	nw, err := w.out.Write(b)
 	if err != nil {
 		return w.wrapErr(err, nw)
@@ -160,6 +242,10 @@ func (w *BinaryWriter) WriteFixed(b []byte) error {
 
 // WriteString writes a string to the writer. It first writes the length of the string as a long, followed by the UTF-8 bytes of the string.
 func (w *BinaryWriter) WriteString(s string) error {
+	if w.isAppend {
+		w.buf = AppendString(w.buf, s)
+		return nil
+	}
 	if err := w.WriteLong(int64(len(s))); err != nil {
 		return err
 	}

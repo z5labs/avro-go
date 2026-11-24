@@ -93,3 +93,39 @@ func ExampleBinaryReader_ResetBytes() {
 	// abc 0
 	// xy 0
 }
+
+func ExampleNewAppendWriter() {
+	w := NewAppendWriter(nil)
+
+	err := message{content: "abc"}.MarshalAvroBinary(w)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	fmt.Print(hex.Dump(w.Bytes()))
+
+	// Output: 00000000  06 61 62 63                                       |.abc|
+}
+
+func ExampleBinaryWriter_ResetAppend() {
+	msgs := []message{{content: "abc"}, {content: "xy"}}
+
+	// One writer, reset onto the same buffer before each record, encodes
+	// without allocating once the buffer is large enough to hold a record.
+	buf := make([]byte, 0, 64)
+	w := NewAppendWriter(nil)
+	for _, msg := range msgs {
+		w.ResetAppend(buf[:0])
+		if err := msg.MarshalAvroBinary(w); err != nil {
+			fmt.Println(err)
+			return
+		}
+		buf = w.Bytes()
+		fmt.Printf("% x\n", buf)
+	}
+
+	// Output:
+	// 06 61 62 63
+	// 04 78 79
+}
