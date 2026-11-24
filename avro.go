@@ -256,6 +256,10 @@ func (r *BinaryReader) ReadInt() (int32, error) {
 }
 
 // ReadLong reads a 64-bit integer from the reader using variable-length zigzag encoding.
+//
+// It returns [ErrOverflow] when the varint encodes a value that does not fit
+// in 64 bits. It returns [io.EOF] only when no byte of the value could be
+// read, and [io.ErrUnexpectedEOF] when the input ends partway through it.
 func (r *BinaryReader) ReadLong() (int64, error) {
 	var unsigned uint64
 	var shift uint
@@ -263,9 +267,17 @@ func (r *BinaryReader) ReadLong() (int64, error) {
 		n, err := io.ReadFull(r.in, r.scratch[:1])
 		r.offset += int64(n)
 		if err != nil {
+			if i > 0 && errors.Is(err, io.EOF) {
+				err = io.ErrUnexpectedEOF
+			}
 			return 0, r.wrapErr(err)
 		}
 		b := r.scratch[0]
+		// The 10th byte carries bit 63 alone; anything above 0x01 encodes a
+		// value of at least 2^64, or continues past the maximum varint length.
+		if i == binary.MaxVarintLen64-1 && b > 0x01 {
+			return 0, r.wrapErr(ErrOverflow)
+		}
 		unsigned |= uint64(b&0x7f) << shift
 		if b&0x80 == 0 {
 			return int64(unsigned>>1) ^ -int64(unsigned&1), nil
@@ -296,6 +308,9 @@ func (r *BinaryReader) ReadDouble() (float64, error) {
 }
 
 // ReadBytes reads a byte array from the reader. It first reads the length as a long, followed by the bytes.
+//
+// It returns [io.EOF] only when no byte of the length prefix could be read,
+// and [io.ErrUnexpectedEOF] when the input ends after that.
 func (r *BinaryReader) ReadBytes() ([]byte, error) {
 	n, err := r.ReadLong()
 	if err != nil {
@@ -314,6 +329,11 @@ func (r *BinaryReader) ReadBytes() ([]byte, error) {
 	nr, err := io.ReadFull(r.in, buf)
 	r.offset += int64(nr)
 	if err != nil {
+		// The length prefix has already been consumed, so the value is cut
+		// short even when no byte of its payload was available.
+		if errors.Is(err, io.EOF) {
+			err = io.ErrUnexpectedEOF
+		}
 		return nil, r.wrapErr(err)
 	}
 	return buf, nil
@@ -344,6 +364,8 @@ func (r *BinaryReader) discard(n int64) error {
 }
 
 // ReadString reads a string from the reader. It first reads the length as a long, followed by the UTF-8 bytes of the string.
+//
+// It follows the same end-of-input rules as [BinaryReader.ReadBytes].
 func (r *BinaryReader) ReadString() (string, error) {
 	b, err := r.ReadBytes()
 	if err != nil {
