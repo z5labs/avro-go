@@ -244,6 +244,9 @@ func (r *BinaryReader) ReadBool() (bool, error) {
 }
 
 // ReadInt reads a 32-bit integer from the reader using variable-length zigzag encoding.
+//
+// It follows the same overflow and end-of-input rules as [BinaryReader.ReadLong],
+// and also returns [ErrOverflow] when the decoded value does not fit in 32 bits.
 func (r *BinaryReader) ReadInt() (int32, error) {
 	l, err := r.ReadLong()
 	if err != nil {
@@ -284,6 +287,7 @@ func (r *BinaryReader) ReadLong() (int64, error) {
 		}
 		shift += 7
 	}
+	// Unreachable: the 10th byte either overflows above or ends the varint.
 	return 0, r.wrapErr(ErrOverflow)
 }
 
