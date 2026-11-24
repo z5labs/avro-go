@@ -61,11 +61,8 @@ func indexCase(i, count int) bytesCase {
 		write:    func(w *BinaryWriter) error { return w.WriteLong(int64(i)) },
 		append:   func(dst []byte) []byte { return AppendIndex(dst, i) },
 		consume:  func(b []byte) (any, int) { return ConsumeIndex(b, count) },
-		read: func(r *BinaryReader) (any, error) {
-			l, err := r.ReadLong()
-			return int(l), err
-		},
-		size: func() int { return SizeIndex(i) },
+		read:     func(r *BinaryReader) (any, error) { return r.ReadIndex(count) },
+		size:     func() int { return SizeIndex(i) },
 	}
 }
 

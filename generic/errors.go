@@ -258,11 +258,20 @@ func (e FieldNameError) Error() string {
 // IndexOutOfRangeError reports a Union or Enum index that falls outside the
 // schema's range. Kind is "union" or "enum"; Name is set for enums (whose
 // schema is named) and empty for unions.
+//
+// It matches [avro.ErrInvalidIndex] under [errors.Is], so one check covers an
+// out-of-range index whether it came from this package or from
+// [avro.BinaryReader.ReadIndex] and [avro.ConsumeIndex].
 type IndexOutOfRangeError struct {
 	Kind  string
 	Name  string
 	Index int64
 	Len   int
+}
+
+// Is reports whether target is [avro.ErrInvalidIndex].
+func (e IndexOutOfRangeError) Is(target error) bool {
+	return target == avro.ErrInvalidIndex
 }
 
 func (e IndexOutOfRangeError) Error() string {
