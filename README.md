@@ -46,7 +46,7 @@ err := avro.MarshalBinary(&buf, Message{Content: "hello"})
 
 ### Encoding into a `[]byte`
 
-To encode into a buffer you manage, put the `BinaryWriter` in append mode. `NewAppendWriter` returns a writer that appends to a `[]byte` with the `Append*` functions instead of writing to an `io.Writer`, so existing `MarshalAvroBinary` methods encode without interface calls. It writes exactly the bytes an `io.Writer`-mode writer would, and its write methods never return an error.
+To encode into a buffer you manage, put the `BinaryWriter` in append mode. `NewAppendWriter` returns a writer that appends to a `[]byte` with the `Append*` functions instead of writing to an `io.Writer`, so existing `MarshalAvroBinary` methods encode without a call through `io.Writer`. It writes exactly the bytes an `io.Writer`-mode writer would, and its write methods never return an error.
 
 ```go
 w := avro.NewAppendWriter(nil)
@@ -72,6 +72,8 @@ for _, msg := range msgs {
 ```
 
 `Bytes()` returns `dst` with everything written since the last `NewAppendWriter` or `ResetAppend` appended; it returns nil for a writer in `io.Writer` mode. `Offset()` counts from `len(dst)` at that point, so `len(Bytes())` is the absolute position. `ArrayWriter` works on an append-mode writer with unsized and sized blocks alike.
+
+When the writer is reset onto the same buffer, the next record overwrites the bytes the last one returned. In the loop above, `send` must be done with `buf` before the next iteration starts. If the bytes must outlive the next reset, copy them, or reset onto a fresh buffer.
 
 ### Unmarshaling
 

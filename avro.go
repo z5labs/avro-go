@@ -90,6 +90,10 @@ func (w *BinaryWriter) Offset() int64 {
 // everything written since appended. Its backing array is dst's when dst had
 // room, and a newly allocated one otherwise. It returns nil when w writes to
 // an io.Writer.
+//
+// The result shares its backing array with any buffer the writer is later
+// reset onto, so it is valid only until that buffer is written to again. Copy
+// it to keep it past the next [BinaryWriter.ResetAppend] onto the same buffer.
 func (w *BinaryWriter) Bytes() []byte {
 	if !w.isAppend {
 		return nil
