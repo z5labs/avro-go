@@ -247,8 +247,8 @@ func NewBytesReader(b []byte) *BinaryReader {
 
 // ResetBytes puts r in bytes mode reading from b, discarding whatever r was
 // reading before, and resets [BinaryReader.Offset] to zero. Reusing one
-// reader across records with ResetBytes is what makes decoding them
-// allocation free.
+// reader across records with ResetBytes is what lets a record decode with no
+// allocations but its strings.
 func (r *BinaryReader) ResetBytes(b []byte) {
 	*r = BinaryReader{isBytes: true, rest: b}
 }
@@ -506,6 +506,10 @@ func (r *BinaryReader) ReadFixed(size int) ([]byte, error) {
 // discard advances the reader past n bytes without retaining them.
 func (r *BinaryReader) discard(n int64) error {
 	if r.isBytes {
+		if n < 0 {
+			// io.CopyN discards nothing for a negative n; do the same.
+			return nil
+		}
 		if n > int64(len(r.rest)) {
 			// The bytes being discarded belong to a value that has already
 			// begun, so running out of them is a short read.

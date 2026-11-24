@@ -247,6 +247,41 @@ func TestBytesReader_offset(t *testing.T) {
 	})
 }
 
+func TestBytesReader_discard(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name        string
+		n           int64
+		expectedErr error
+		remaining   []byte
+	}{
+		{name: "discards part of the input", n: 2, remaining: []byte{0x03}},
+		{name: "discards all of the input", n: 3, remaining: []byte{}},
+		{name: "discards nothing for zero", n: 0, remaining: []byte{0x01, 0x02, 0x03}},
+		{name: "discards nothing for a negative count, as from an io reader", n: -1, remaining: []byte{0x01, 0x02, 0x03}},
+		{name: "past the end is an unexpected eof", n: 4, expectedErr: io.ErrUnexpectedEOF, remaining: []byte{0x01, 0x02, 0x03}},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			input := []byte{0x01, 0x02, 0x03}
+			r := NewBytesReader(input)
+			err := r.discard(tc.n)
+
+			if tc.expectedErr != nil {
+				requireBytesReaderErr(t, r, err, tc.expectedErr, 0, tc.remaining)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.remaining, r.Remaining())
+			require.Equal(t, int64(len(input)-len(tc.remaining)), r.Offset())
+		})
+	}
+}
+
 func TestBytesReader_aliasing(t *testing.T) {
 	t.Parallel()
 
@@ -622,12 +657,18 @@ func BenchmarkUnmarshalAvroBinary(b *testing.B) {
 		for b.Loop() {
 			readerSinkErr = UnmarshalBinary(bytes.NewReader(encoded), &rec)
 		}
+		if readerSinkErr != nil {
+			b.Fatal(readerSinkErr)
+		}
 	})
 
 	b.Run("UnmarshalBytes", func(b *testing.B) {
 		var rec generatedRecord
 		for b.Loop() {
 			readerSinkErr = UnmarshalBytes(encoded, &rec)
+		}
+		if readerSinkErr != nil {
+			b.Fatal(readerSinkErr)
 		}
 	})
 
@@ -637,6 +678,9 @@ func BenchmarkUnmarshalAvroBinary(b *testing.B) {
 		for b.Loop() {
 			r.ResetBytes(encoded)
 			readerSinkErr = rec.UnmarshalAvroBinary(r)
+		}
+		if readerSinkErr != nil {
+			b.Fatal(readerSinkErr)
 		}
 	})
 }
