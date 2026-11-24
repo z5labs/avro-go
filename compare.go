@@ -21,6 +21,8 @@ import (
 // whatever the other side holds; see [ConsumeError]. c is 0 whenever na or nb
 // is negative.
 //
+// Avro ints share the long encoding, so CompareLong orders encoded ints too.
+//
 // CompareLong does not allocate.
 func CompareLong(a, b []byte) (c, na, nb int) {
 	va, na := ConsumeLong(a)
@@ -39,7 +41,8 @@ func CompareLong(a, b []byte) (c, na, nb int) {
 //
 // c is -1 if a's payload sorts before b's, 0 if they are equal and +1 if a's
 // sorts after. The payloads are compared where they lie in a and b, without
-// being copied. Overlong length prefixes compare by the length they encode.
+// being copied. An overlong length prefix is accepted and decoded to the
+// length it encodes, so it does not change the result.
 //
 // na and nb are the counts [ConsumeBytes] returns for a and b: the length
 // prefix plus the payload. Each side is consumed independently, so a side that

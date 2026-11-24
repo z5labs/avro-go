@@ -67,8 +67,11 @@ func requireCompare[T any](t *testing.T, da, db decodeSide[T], compare func(T, T
 }
 
 // overlong returns an overlong encoding of v: its varint padded with extra
-// bytes that carry no value bits.
+// bytes that carry no value bits. extra must be at least 1.
 func overlong(v int64, extra int) []byte {
+	if extra < 1 {
+		panic("overlong: extra must be at least 1")
+	}
 	b := AppendLong(nil, v)
 	b[len(b)-1] |= 0x80
 	for range extra - 1 {
@@ -339,6 +342,11 @@ func TestCompareBytes(t *testing.T) {
 			b:    []byte{},
 		},
 		{
+			name: "both empty inputs",
+			a:    nil,
+			b:    nil,
+		},
+		{
 			name: "a truncated in its length prefix",
 			a:    AppendBytes(nil, long)[:1],
 			b:    bytesOf(0x01),
@@ -384,11 +392,12 @@ func TestCompareBytes(t *testing.T) {
 	}
 }
 
-func TestCompareBytes_doesNotCopy(t *testing.T) {
+func TestCompareBytes_readsOnlyThePayload(t *testing.T) {
 	t.Parallel()
 
-	// A comparison reads the payloads where they lie: changing a payload byte
-	// in place changes the result, and nothing outside the payloads is read.
+	// A comparison reads each payload and nothing past it: the trailing bytes
+	// differ but do not affect the result, and a changed payload byte does.
+	// That the payloads are not copied rests on TestCompareAllocations.
 	a := append(AppendString(nil, "abc"), 0xee)
 	b := append(AppendString(nil, "abc"), 0x11)
 
