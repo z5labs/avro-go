@@ -68,6 +68,19 @@ func (e InvalidDurationSizeError) Error() string {
 	return fmt.Sprintf("avro: duration underlying size must be 12, got %d", e.Size)
 }
 
+// NegativeFixedSizeError reports a fixed schema whose "size" is negative.
+// A fixed's size is the number of bytes in every value, so a negative size
+// describes no data. This applies wherever the fixed appears, including as the
+// underlying type of a decimal or duration logical type.
+type NegativeFixedSizeError struct {
+	Name string // full name of the fixed, including its namespace if any
+	Size int
+}
+
+func (e NegativeFixedSizeError) Error() string {
+	return fmt.Sprintf("avro: fixed schema %q: size must not be negative, got %d", e.Name, e.Size)
+}
+
 // InvalidOrderError reports a Field with an Order outside the spec's
 // {ascending, descending, ignore} set.
 type InvalidOrderError struct{ Order Order }
@@ -564,6 +577,9 @@ func parseFixed(obj map[string]json.RawMessage, namespace string) (Fixed, error)
 	}
 	if err := unmarshalIfPresent(obj, "size", &f.Size); err != nil {
 		return f, err
+	}
+	if f.Size < 0 {
+		return f, NegativeFixedSizeError{Name: qualifiedName(f.Namespace, f.Name), Size: f.Size}
 	}
 	return f, nil
 }

@@ -90,12 +90,12 @@ func schemaFromType(namespace string, t idl.Type) (Schema, error) {
 		}
 		return schemaFromUnion(namespace, *v)
 	case idl.Fixed:
-		return schemaFromFixed(namespace, v), nil
+		return schemaFromFixed(namespace, v)
 	case *idl.Fixed:
 		if v == nil {
 			return Schema{}, fmt.Errorf("canonical: nil fixed type")
 		}
-		return schemaFromFixed(namespace, *v), nil
+		return schemaFromFixed(namespace, *v)
 	default:
 		return Schema{}, fmt.Errorf("canonical: unknown idl type %T", t)
 	}
@@ -166,12 +166,16 @@ func schemaFromUnion(namespace string, u idl.Union) (Schema, error) {
 	return UnionSchema(schemas), nil
 }
 
-func schemaFromFixed(namespace string, f idl.Fixed) Schema {
+func schemaFromFixed(namespace string, f idl.Fixed) (Schema, error) {
 	ns := effectiveNamespace(namespace, f.Namespace)
+	name := qualifyName(ns, f.Name)
+	if f.Size < 0 {
+		return Schema{}, NegativeFixedSizeError{Name: name, Size: f.Size}
+	}
 	return FixedSchema(Fixed{
-		Name: qualifyName(ns, f.Name),
+		Name: name,
 		Size: f.Size,
-	})
+	}), nil
 }
 
 func qualifyName(namespace, name string) string {

@@ -162,6 +162,53 @@ fixed MD5(16;`,
 			},
 		},
 		{
+			name: "fixed with negative size",
+			src: `schema int;
+fixed MD5(-16);`,
+			expectedErr: NegativeFixedSizeError{
+				Pos:  Pos{Line: 2, Column: 11},
+				Name: "MD5",
+				Size: -16,
+			},
+		},
+		{
+			name: "fixed with negative size in a namespaced schema",
+			src: `namespace com.example;
+schema int;
+fixed Hash(-1);`,
+			expectedErr: NegativeFixedSizeError{
+				Pos:  Pos{Line: 3, Column: 12},
+				Name: "Hash",
+				Size: -1,
+			},
+		},
+		{
+			name: "fixed with negative size after a valid fixed",
+			src: `schema int;
+fixed MD5(16);
+fixed SHA256(-32);`,
+			expectedErr: NegativeFixedSizeError{
+				Pos:  Pos{Line: 3, Column: 14},
+				Name: "SHA256",
+				Size: -32,
+			},
+		},
+		{
+			name: "escaped fixed name with negative size",
+			src:  "schema int;\nfixed `null`(-1);",
+			expectedErr: NegativeFixedSizeError{
+				Pos:  Pos{Line: 2, Column: 14},
+				Name: "null",
+				Size: -1,
+			},
+		},
+		{
+			name: "fixed with negative size reports name, size and position",
+			src: `schema int;
+fixed Hash(-1);`,
+			expectedErrMsg: "negative fixed size at line 2, column 12: fixed Hash has size -1, size must not be negative",
+		},
+		{
 			name: "map schema missing open angle bracket",
 			src:  `schema map int>;`,
 			expectedErr: UnexpectedTokenError{
@@ -614,6 +661,23 @@ fixed MD5(16);`,
 						&Fixed{
 							Name: "MD5",
 							Size: 16,
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "schema with fixed type of size zero",
+			src: `schema int;
+fixed Empty(0);`,
+			expected: &File{
+				Schema: &Schema{
+					Pos:  Pos{Line: 1, Column: 1},
+					Type: Ident{Pos: Pos{Line: 1, Column: 8}, Value: "int"},
+					Types: []Type{
+						&Fixed{
+							Name: "Empty",
+							Size: 0,
 						},
 					},
 				},
