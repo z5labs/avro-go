@@ -62,18 +62,16 @@ func newFuzzRead(kind uint8, arg uint16) fuzzRead {
 	return fuzzRead{kind: fuzzReadKind(kind % uint8(fuzzReadKinds)), arg: int(arg)}
 }
 
-// fuzzValue normalises a decoded value so that require.Equal compares what was
-// decoded rather than how it is represented: floats by their bits, so that NaN
-// equals itself, and []byte by its contents, so that an empty fixed decoded
-// from nil input equals one decoded from an empty slice.
+// fuzzValue normalises a decoded float to its bits, so that require.Equal
+// compares what was decoded and NaN equals itself. A []byte is left alone:
+// require.Equal tells nil from empty, and the readers and ConsumeBytes all
+// document an empty value as non-nil.
 func fuzzValue(v any) any {
 	switch v := v.(type) {
 	case float32:
 		return math.Float32bits(v)
 	case float64:
 		return math.Float64bits(v)
-	case []byte:
-		return string(v)
 	default:
 		return v
 	}
@@ -132,7 +130,14 @@ func (op fuzzRead) consume(b []byte) (any, int) {
 		s, n = ConsumeBytes(b)
 		v = string(s)
 	case fuzzReadFixed:
-		v, n = ConsumeFixed(b, op.arg)
+		var fixed []byte
+		fixed, n = ConsumeFixed(b, op.arg)
+		if fixed == nil && n == 0 {
+			// ConsumeFixed documents a nil result for a size of 0 from nil
+			// input, where the readers return an empty, non-nil slice.
+			fixed = []byte{}
+		}
+		v = fixed
 	default:
 		panic("fuzzRead: unknown kind")
 	}
@@ -222,6 +227,36 @@ func requireSameConsume(t *testing.T, want any, wantErr error, offset int64, got
 	require.NoError(t, ConsumeError(n), "io.Reader mode decoded %v", want)
 	require.Equal(t, want, got)
 	require.Equal(t, offset, int64(n))
+}
+
+// requireSameLength asserts that ConsumeLength agreed with the length prefix
+// an io.Reader-mode ReadBytes or ReadString decoded from data, which returned
+// want and wantErr and consumed offset bytes on success.
+func requireSameLength(t *testing.T, data []byte, want any, wantErr error, offset int64) {
+	t.Helper()
+
+	l, n := ConsumeLength(data)
+	if wantErr == nil {
+		require.NoError(t, ConsumeError(n))
+		require.Equal(t, int(offset)-n, l, "the payload length")
+		switch want := want.(type) {
+		case []byte:
+			require.Len(t, want, l)
+		case string:
+			require.Len(t, want, l)
+		}
+		return
+	}
+
+	sentinel := requireReaderErr(t, wantErr)
+	if n >= 0 {
+		// The prefix decoded, so the read failed in the payload, which runs
+		// past the end of the input.
+		require.Equal(t, io.ErrUnexpectedEOF, sentinel)
+		require.Greater(t, l, len(data)-n)
+		return
+	}
+	require.ErrorIs(t, ConsumeError(n), consumeSentinel(sentinel))
 }
 
 // fuzzReadSeed is one seed of FuzzBytesReader and FuzzConsume.
@@ -351,6 +386,8 @@ func FuzzBytesReader(f *testing.F) {
 		if op.overAllocates(data) {
 			_, err := op.read(br)
 			require.Equal(t, io.ErrUnexpectedEOF, requireReaderErr(t, err))
+			require.Zero(t, br.Offset())
+			require.True(t, bytes.Equal(data, br.Remaining()), "a failed bytes-mode read consumed input")
 			return
 		}
 
@@ -383,6 +420,12 @@ func FuzzConsume(f *testing.F) {
 		if op.overAllocates(data) {
 			_, n := op.consume(data)
 			require.Equal(t, io.ErrUnexpectedEOF, ConsumeError(n))
+
+			// The length prefix itself is valid; it is the payload that is
+			// missing.
+			l, ln := ConsumeLength(data)
+			require.NoError(t, ConsumeError(ln))
+			require.Greater(t, l, len(data)-ln)
 			return
 		}
 
@@ -391,6 +434,9 @@ func FuzzConsume(f *testing.F) {
 		got, n := op.consume(data)
 
 		requireSameConsume(t, want, wantErr, rr.Offset(), got, n)
+		if op.kind == fuzzReadBytes || op.kind == fuzzReadString {
+			requireSameLength(t, data, want, wantErr, rr.Offset())
+		}
 	})
 }
 
@@ -444,12 +490,16 @@ func FuzzBytesReader_sequence(f *testing.F) {
 	// end of the input.
 	f.Add(append(bytes.Clone(record), record...), data)
 
-	// A sequence of longs that ends in each corrupt varint.
+	// Two longs and then each corrupt varint, read by each method that
+	// begins with a varint, so that the corrupt varint starts partway
+	// through the input.
 	for _, v := range corruptVarints() {
-		f.Add(
-			program(step{fuzzReadLong, 0}, step{fuzzReadInt, 0}, step{fuzzReadBytes, 0}, step{fuzzReadIndex, 3}),
-			append(AppendLong(AppendLong(nil, 1), math.MaxInt64), v...),
-		)
+		for _, kind := range fuzzVarintKinds {
+			f.Add(
+				program(step{fuzzReadLong, 0}, step{fuzzReadLong, 0}, step{kind, 3}),
+				append(AppendLong(AppendLong(nil, 1), math.MaxInt64), v...),
+			)
+		}
 	}
 
 	f.Fuzz(func(t *testing.T, program, data []byte) {
@@ -464,6 +514,8 @@ func FuzzBytesReader_sequence(f *testing.F) {
 			if op.overAllocates(rest) {
 				_, err := op.read(br)
 				require.Equal(t, io.ErrUnexpectedEOF, requireReaderErr(t, err))
+				require.Equal(t, int64(pos), br.Offset(), "a failed bytes-mode read consumed input")
+				require.True(t, bytes.Equal(rest, br.Remaining()), "a failed bytes-mode read consumed input")
 				_, n := op.consume(rest)
 				require.Equal(t, io.ErrUnexpectedEOF, ConsumeError(n))
 				return
@@ -478,6 +530,7 @@ func FuzzBytesReader_sequence(f *testing.F) {
 			requireSameConsume(t, want, wantErr, rr.Offset()-start, consumed, n)
 			if wantErr != nil {
 				require.Equal(t, int64(pos), br.Offset(), "a failed bytes-mode read consumed input")
+				require.True(t, bytes.Equal(rest, br.Remaining()), "a failed bytes-mode read consumed input")
 				return
 			}
 
@@ -540,6 +593,14 @@ func FuzzAppend_roundTrip(f *testing.F) {
 			v, n := ConsumeIndex(withTrailing(encoded), index+1)
 			requireConsumed(t, encoded, n, SizeIndex(index))
 			require.Equal(t, index, v)
+		})
+
+		t.Run("length", func(t *testing.T) {
+			length := int(idx >> 1)
+			encoded := AppendLong(nil, int64(length))
+			v, n := ConsumeLength(withTrailing(encoded))
+			requireConsumed(t, encoded, n, SizeLong(int64(length)))
+			require.Equal(t, length, v)
 		})
 
 		t.Run("bool", func(t *testing.T) {
