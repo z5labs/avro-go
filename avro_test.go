@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"testing"
@@ -859,6 +860,16 @@ func TestReadInt(t *testing.T) {
 			input:       []byte{0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01},
 			expectedErr: ErrOverflow,
 		},
+		{
+			name:        "tenth byte of 0x02 overflows",
+			input:       []byte{0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x02},
+			expectedErr: ErrOverflow,
+		},
+		{
+			name:        "tenth byte of 0x7f overflows",
+			input:       []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f},
+			expectedErr: ErrOverflow,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -949,6 +960,11 @@ func TestReadLong(t *testing.T) {
 			input:       []byte{0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01},
 			expectedErr: ErrOverflow,
 		},
+		{
+			name:        "tenth byte of 0x81 overflows",
+			input:       []byte{0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x81},
+			expectedErr: ErrOverflow,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -1001,6 +1017,182 @@ func TestReadLong_error(t *testing.T) {
 
 		require.ErrorIs(t, err, io.ErrClosedPipe)
 	})
+}
+
+func TestReadLong_tenthByteOverflow(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name        string
+		tenth       byte
+		expected    int64
+		expectedErr error
+	}{
+		{
+			name:     "0x01 decodes",
+			tenth:    0x01,
+			expected: math.MinInt64,
+		},
+		{
+			name:        "0x02 overflows",
+			tenth:       0x02,
+			expectedErr: ErrOverflow,
+		},
+		{
+			name:        "0x7f overflows",
+			tenth:       0x7f,
+			expectedErr: ErrOverflow,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			input := append(bytes.Repeat([]byte{0xff}, binary.MaxVarintLen64-1), tc.tenth)
+			r := NewBinaryReader(bytes.NewReader(input))
+
+			got, err := r.ReadLong()
+
+			if tc.expectedErr != nil {
+				var rerr *BinaryReaderError
+				require.ErrorAs(t, err, &rerr)
+				require.ErrorIs(t, err, tc.expectedErr)
+				require.Equal(t, int64(binary.MaxVarintLen64), rerr.Offset)
+				require.Equal(t, int64(binary.MaxVarintLen64), r.Offset())
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, got)
+		})
+	}
+}
+
+// truncations returns every proper prefix of data, including the empty one.
+// Each is a value cut short at that position.
+func truncations(data []byte) [][]byte {
+	prefixes := make([][]byte, len(data))
+	for i := range prefixes {
+		prefixes[i] = data[:i]
+	}
+	return prefixes
+}
+
+// truncationErr is the error a read of a value cut short after n bytes must
+// report: io.EOF when no byte of it was available, io.ErrUnexpectedEOF after.
+func truncationErr(n int) error {
+	if n == 0 {
+		return io.EOF
+	}
+	return io.ErrUnexpectedEOF
+}
+
+func TestBinaryReader_truncated(t *testing.T) {
+	t.Parallel()
+
+	maxLong := []byte{0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01}
+	minInt := []byte{0xff, 0xff, 0xff, 0xff, 0x0f}
+
+	// A 64-byte payload has a two-byte length prefix, so truncation lands
+	// inside the prefix as well as after it.
+	payload := bytes.Repeat([]byte{'a'}, 64)
+	var longBytes bytes.Buffer
+	require.NoError(t, NewBinaryWriter(&longBytes).WriteBytes(payload))
+	require.Equal(t, 2+len(payload), longBytes.Len())
+
+	reads := []struct {
+		name string
+		data []byte
+		read func(r *BinaryReader) error
+	}{
+		{
+			name: "ReadLong",
+			data: maxLong,
+			read: func(r *BinaryReader) error {
+				_, err := r.ReadLong()
+				return err
+			},
+		},
+		{
+			name: "ReadInt",
+			data: minInt,
+			read: func(r *BinaryReader) error {
+				_, err := r.ReadInt()
+				return err
+			},
+		},
+		{
+			name: "ReadBytes",
+			data: longBytes.Bytes(),
+			read: func(r *BinaryReader) error {
+				_, err := r.ReadBytes()
+				return err
+			},
+		},
+		{
+			name: "ReadString",
+			data: longBytes.Bytes(),
+			read: func(r *BinaryReader) error {
+				_, err := r.ReadString()
+				return err
+			},
+		},
+	}
+
+	type testCase struct {
+		name           string
+		input          []byte
+		read           func(r *BinaryReader) error
+		expectedErr    error
+		expectedOffset int64
+	}
+	var testCases []testCase
+	for _, rd := range reads {
+		for _, prefix := range truncations(rd.data) {
+			testCases = append(testCases, testCase{
+				name:           fmt.Sprintf("%s cut after %d of %d bytes", rd.name, len(prefix), len(rd.data)),
+				input:          prefix,
+				read:           rd.read,
+				expectedErr:    truncationErr(len(prefix)),
+				expectedOffset: int64(len(prefix)),
+			})
+		}
+	}
+	testCases = append(testCases,
+		testCase{
+			name:           "ReadLong continuation byte with nothing after it",
+			input:          []byte{0x80},
+			read:           reads[0].read,
+			expectedErr:    io.ErrUnexpectedEOF,
+			expectedOffset: 1,
+		},
+		testCase{
+			name:           "ReadBytes length prefix with no payload",
+			input:          []byte{0x04},
+			read:           reads[2].read,
+			expectedErr:    io.ErrUnexpectedEOF,
+			expectedOffset: 1,
+		},
+	)
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			r := NewBinaryReader(bytes.NewReader(tc.input))
+
+			err := tc.read(r)
+
+			var rerr *BinaryReaderError
+			require.ErrorAs(t, err, &rerr)
+			require.ErrorIs(t, rerr.Err, tc.expectedErr)
+			if tc.expectedErr == io.ErrUnexpectedEOF {
+				require.NotErrorIs(t, err, io.EOF)
+			}
+			require.Equal(t, tc.expectedOffset, rerr.Offset)
+			require.Equal(t, tc.expectedOffset, r.Offset())
+		})
+	}
 }
 
 func TestReadFloat(t *testing.T) {
