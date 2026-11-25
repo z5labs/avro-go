@@ -335,7 +335,7 @@ func TestSchema_UnmarshalJSON(t *testing.T) {
 				Name: "com.example.MD5",
 				Size: 16,
 			}),
-		},		{
+		}, {
 			name:  "fixed of size zero",
 			input: `{"name":"com.example.Empty","type":"fixed","size":0}`,
 			expected: FixedSchema(Fixed{
