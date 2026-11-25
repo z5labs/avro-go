@@ -254,6 +254,16 @@ fixed MD5(16);`,
 			},
 		},
 		{
+			name: "fixed of size zero",
+			src: `namespace com.example;
+schema int;
+fixed Empty(0);`,
+			expected: []Schema{
+				PrimitiveSchema(Int),
+				FixedSchema(Fixed{Name: "com.example.Empty", Size: 0}),
+			},
+		},
+		{
 			name: "fixed with type namespace override",
 			src: `namespace com.example;
 schema int;
@@ -373,4 +383,93 @@ func TestSchemaFrom_nil_schema(t *testing.T) {
 	_, err := SchemaFrom(nil)
 
 	require.Error(t, err)
+}
+
+// TestSchemaFrom_NegativeFixedSize covers hand-built IDL values. idl.Parse
+// rejects a negative fixed size, so each case parses a valid IDL schema and
+// then sets the size of the fixed it declares to a negative value.
+func TestSchemaFrom_NegativeFixedSize(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		src      string
+		mutate   func(s *idl.Schema)
+		expected NegativeFixedSizeError
+	}{
+		{
+			name: "fixed pointer in types",
+			src: `namespace com.example;
+schema int;
+fixed Hash(16);`,
+			mutate: func(s *idl.Schema) {
+				s.Types[0].(*idl.Fixed).Size = -1
+			},
+			expected: NegativeFixedSizeError{Name: "com.example.Hash", Size: -1},
+		},
+		{
+			name: "fixed value in types",
+			src: `namespace com.example;
+schema int;
+fixed Hash(16);`,
+			mutate: func(s *idl.Schema) {
+				f := *s.Types[0].(*idl.Fixed)
+				f.Size = -16
+				s.Types[0] = f
+			},
+			expected: NegativeFixedSizeError{Name: "com.example.Hash", Size: -16},
+		},
+		{
+			name: "fixed with type namespace override",
+			src: `namespace com.example;
+schema int;
+@namespace("org.other")
+fixed Hash(16);`,
+			mutate: func(s *idl.Schema) {
+				s.Types[0].(*idl.Fixed).Size = -1
+			},
+			expected: NegativeFixedSizeError{Name: "org.other.Hash", Size: -1},
+		},
+		{
+			name: "fixed after other types",
+			src: `namespace com.example;
+schema int;
+fixed MD5(16);
+fixed SHA256(32);`,
+			mutate: func(s *idl.Schema) {
+				s.Types[1].(*idl.Fixed).Size = -32
+			},
+			expected: NegativeFixedSizeError{Name: "com.example.SHA256", Size: -32},
+		},
+		{
+			name: "fixed as a union member",
+			src: `namespace com.example;
+schema union { null, int };
+fixed Hash(16);`,
+			mutate: func(s *idl.Schema) {
+				f := s.Types[0].(*idl.Fixed)
+				f.Size = -1
+				u := s.Type.(*idl.Union)
+				u.Types = append(u.Types, f)
+				s.Types = nil
+			},
+			expected: NegativeFixedSizeError{Name: "com.example.Hash", Size: -1},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			f, err := idl.Parse(strings.NewReader(tc.src))
+			require.NoError(t, err)
+			tc.mutate(f.Schema)
+
+			_, err = SchemaFrom(f.Schema)
+
+			var got NegativeFixedSizeError
+			require.ErrorAs(t, err, &got)
+			require.Equal(t, tc.expected, got)
+		})
+	}
 }

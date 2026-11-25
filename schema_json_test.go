@@ -142,6 +142,15 @@ func TestParseJSON(t *testing.T) {
 		{name: "map", json: `{"type":"map","values":"string"}`, want: Map{Values: String{}}},
 		{name: "union", json: `["null","string"]`, want: Union{Types: []Schema{Null{}, String{}}}},
 		{name: "fixed", json: `{"type":"fixed","name":"MD5","size":16}`, want: Fixed{Name: "MD5", Size: 16}},
+		{name: "fixed of size zero", json: `{"type":"fixed","name":"Empty","size":0}`, want: Fixed{Name: "Empty", Size: 0}},
+		{
+			name: "fixed of size zero nested in a record field",
+			json: `{"type":"record","name":"R","fields":[{"name":"e","type":{"type":"fixed","name":"Empty","size":0}}]}`,
+			want: Record{
+				Name:   "R",
+				Fields: []*Field{{Name: "e", Type: Fixed{Name: "Empty", Size: 0}}},
+			},
+		},
 		{
 			name: "decimal over bytes",
 			json: `{"type":"bytes","logicalType":"decimal","precision":9,"scale":2}`,
@@ -151,6 +160,11 @@ func TestParseJSON(t *testing.T) {
 			name: "decimal over fixed",
 			json: `{"type":"fixed","logicalType":"decimal","name":"Dec","size":8,"precision":9,"scale":2}`,
 			want: Decimal{Precision: 9, Scale: 2, Underlying: Fixed{Name: "Dec", Size: 8}},
+		},
+		{
+			name: "decimal over fixed of size zero",
+			json: `{"type":"fixed","logicalType":"decimal","name":"Dec","size":0,"precision":9,"scale":2}`,
+			want: Decimal{Precision: 9, Scale: 2, Underlying: Fixed{Name: "Dec", Size: 0}},
 		},
 		{name: "uuid", json: `{"type":"string","logicalType":"uuid"}`, want: UUID{}},
 		{name: "date", json: `{"type":"int","logicalType":"date"}`, want: Date{}},
@@ -308,6 +322,96 @@ func TestParseJSON_Errors(t *testing.T) {
 		require.ErrorAs(t, err, &got)
 		require.Equal(t, "sideways", got.Value)
 	})
+}
+
+// TestParseJSON_NegativeFixedSize covers a fixed schema with a negative size,
+// which describes no data, wherever the fixed appears in the schema.
+func TestParseJSON_NegativeFixedSize(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		json     string
+		expected NegativeFixedSizeError
+	}{
+		{
+			name:     "top level fixed",
+			json:     `{"type":"fixed","name":"Hash","size":-1}`,
+			expected: NegativeFixedSizeError{Name: "Hash", Size: -1},
+		},
+		{
+			name:     "top level fixed with namespace",
+			json:     `{"type":"fixed","name":"Hash","namespace":"com.example","size":-16}`,
+			expected: NegativeFixedSizeError{Name: "com.example.Hash", Size: -16},
+		},
+		{
+			name:     "top level fixed with qualified name",
+			json:     `{"type":"fixed","name":"com.example.Hash","size":-16}`,
+			expected: NegativeFixedSizeError{Name: "com.example.Hash", Size: -16},
+		},
+		{
+			name: "fixed nested in a record field",
+			json: `{
+				"type": "record",
+				"name": "User",
+				"namespace": "com.example",
+				"fields": [
+					{"name": "id", "type": "long"},
+					{"name": "hash", "type": {"type": "fixed", "name": "Hash", "size": -1}}
+				]
+			}`,
+			expected: NegativeFixedSizeError{Name: "com.example.Hash", Size: -1},
+		},
+		{
+			name:     "fixed nested in a union",
+			json:     `["null", {"type": "fixed", "name": "Hash", "size": -1}]`,
+			expected: NegativeFixedSizeError{Name: "Hash", Size: -1},
+		},
+		{
+			name:     "fixed nested in an array",
+			json:     `{"type": "array", "items": {"type": "fixed", "name": "Hash", "size": -1}}`,
+			expected: NegativeFixedSizeError{Name: "Hash", Size: -1},
+		},
+		{
+			name:     "fixed nested in a map",
+			json:     `{"type": "map", "values": {"type": "fixed", "name": "Hash", "size": -1}}`,
+			expected: NegativeFixedSizeError{Name: "Hash", Size: -1},
+		},
+		{
+			name:     "fixed underlying a decimal",
+			json:     `{"type": "fixed", "logicalType": "decimal", "name": "Dec", "size": -8, "precision": 9, "scale": 2}`,
+			expected: NegativeFixedSizeError{Name: "Dec", Size: -8},
+		},
+		{
+			name: "fixed underlying a decimal nested in a record field",
+			json: `{
+				"type": "record",
+				"name": "Payment",
+				"namespace": "com.example",
+				"fields": [
+					{"name": "amount", "type": {"type": "fixed", "logicalType": "decimal", "name": "Amount", "size": -8, "precision": 9}}
+				]
+			}`,
+			expected: NegativeFixedSizeError{Name: "com.example.Amount", Size: -8},
+		},
+		{
+			name:     "fixed underlying a duration",
+			json:     `{"type": "fixed", "logicalType": "duration", "name": "duration", "size": -12}`,
+			expected: NegativeFixedSizeError{Name: "duration", Size: -12},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := ParseJSON([]byte(tc.json))
+
+			var got NegativeFixedSizeError
+			require.ErrorAs(t, err, &got)
+			require.Equal(t, tc.expected, got)
+		})
+	}
 }
 
 // TestParseJSON_LogicalTypeFallback covers the Avro spec rule that a logical

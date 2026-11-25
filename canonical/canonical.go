@@ -63,6 +63,20 @@ type Fixed struct {
 	Size int
 }
 
+// NegativeFixedSizeError is returned when a fixed schema has a negative size,
+// either in canonical form JSON passed to [Schema.UnmarshalJSON] or in an
+// [idl.Fixed] passed to [SchemaFrom]. A fixed's size is the number of bytes in
+// every value, so a negative size describes no data.
+type NegativeFixedSizeError struct {
+	Name string // full name of the fixed
+	Size int
+}
+
+// Error implements the [error] interface.
+func (e NegativeFixedSizeError) Error() string {
+	return fmt.Sprintf("canonical: fixed %q: size must not be negative, got %d", e.Name, e.Size)
+}
+
 // Schema is the top-level type that represents any Avro schema in parsing canonical form.
 // It implements json.Marshaler and json.Unmarshaler.
 type Schema struct {
@@ -476,6 +490,9 @@ func (s *Schema) unmarshalFixed(obj map[string]json.RawMessage) error {
 	var size int
 	if err := json.Unmarshal(rawSize, &size); err != nil {
 		return fmt.Errorf("canonical: fixed: invalid size: %w", err)
+	}
+	if size < 0 {
+		return NegativeFixedSizeError{Name: name, Size: size}
 	}
 
 	s.val = Fixed{Name: name, Size: size}

@@ -240,6 +240,26 @@ func (e UnterminatedEscapedIdentifierError) Error() string {
 	return fmt.Sprintf("unterminated escaped identifier at line %d, column %d", e.Pos.Line, e.Pos.Column)
 }
 
+// NegativeFixedSizeError is the error returned by the parser when a fixed declaration has a
+// negative size, e.g. `fixed Hash(-1);`. A fixed's size is the number of bytes in every value,
+// so a negative size describes no data. Pos is the position of the size.
+type NegativeFixedSizeError struct {
+	Pos  Pos
+	Name string
+	Size int
+}
+
+// Error implements the [error] interface.
+func (e NegativeFixedSizeError) Error() string {
+	return fmt.Sprintf(
+		"negative fixed size at line %d, column %d: fixed %s has size %d, size must not be negative",
+		e.Pos.Line,
+		e.Pos.Column,
+		e.Name,
+		e.Size,
+	)
+}
+
 // Parse the Avro IDL defined in the given reader.
 func Parse(r io.Reader) (file *File, err error) {
 	next, stop := iter.Pull2(Tokenize(r))
@@ -1225,6 +1245,9 @@ func parseFixedSize(p *parser, fixed *Fixed) (parserAction[*Fixed], error) {
 	size, err := strconv.Atoi(string(tok.Value))
 	if err != nil {
 		return nil, err
+	}
+	if size < 0 {
+		return nil, NegativeFixedSizeError{Pos: tok.Pos, Name: fixed.Name, Size: size}
 	}
 	fixed.Size = size
 	return parseFixedCloseParen, nil

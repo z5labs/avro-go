@@ -335,6 +335,13 @@ func TestSchema_UnmarshalJSON(t *testing.T) {
 				Name: "com.example.MD5",
 				Size: 16,
 			}),
+		}, {
+			name:  "fixed of size zero",
+			input: `{"name":"com.example.Empty","type":"fixed","size":0}`,
+			expected: FixedSchema(Fixed{
+				Name: "com.example.Empty",
+				Size: 0,
+			}),
 		},
 	}
 
@@ -628,6 +635,55 @@ func TestSchema_UnmarshalJSON_Errors(t *testing.T) {
 
 			require.Error(t, err)
 			require.Contains(t, err.Error(), tc.expectedErr)
+		})
+	}
+}
+
+func TestSchema_UnmarshalJSON_NegativeFixedSize(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		input    string
+		expected NegativeFixedSizeError
+	}{
+		{
+			name:     "top level fixed",
+			input:    `{"name":"com.example.Hash","type":"fixed","size":-1}`,
+			expected: NegativeFixedSizeError{Name: "com.example.Hash", Size: -1},
+		},
+		{
+			name:     "fixed nested in a record field",
+			input:    `{"name":"com.example.User","type":"record","fields":[{"name":"id","type":"long"},{"name":"hash","type":{"name":"com.example.Hash","type":"fixed","size":-16}}]}`,
+			expected: NegativeFixedSizeError{Name: "com.example.Hash", Size: -16},
+		},
+		{
+			name:     "fixed nested in a union",
+			input:    `["null",{"name":"com.example.Hash","type":"fixed","size":-1}]`,
+			expected: NegativeFixedSizeError{Name: "com.example.Hash", Size: -1},
+		},
+		{
+			name:     "fixed nested in an array",
+			input:    `{"type":"array","items":{"name":"com.example.Hash","type":"fixed","size":-1}}`,
+			expected: NegativeFixedSizeError{Name: "com.example.Hash", Size: -1},
+		},
+		{
+			name:     "fixed nested in a map",
+			input:    `{"type":"map","values":{"name":"com.example.Hash","type":"fixed","size":-1}}`,
+			expected: NegativeFixedSizeError{Name: "com.example.Hash", Size: -1},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var s Schema
+			err := json.Unmarshal([]byte(tc.input), &s)
+
+			var got NegativeFixedSizeError
+			require.ErrorAs(t, err, &got)
+			require.Equal(t, tc.expected, got)
 		})
 	}
 }
